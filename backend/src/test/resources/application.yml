@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:stocksmart-test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+app:
+  data:
+    seed-enabled: false
+security:
+  jwt:
+    secret: c3RvY2tzbWFydC1kZXYtand0LXNlY3JldC0wMTIzNDU2Nzg5YWJjZGVmZ2hpamtsbW5vcA==
+    expiration-ms: 86400000
