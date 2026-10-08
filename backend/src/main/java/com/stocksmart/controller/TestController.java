@@ -30,7 +30,7 @@ public class TestController {
     }
 
     @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole(T(com.stocksmart.security.authorization.Roles).ADMIN)")
     @Operation(summary = "Requires ADMIN role")
     public ResponseEntity<ApiResponse> admin(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.ok(
@@ -39,7 +39,7 @@ public class TestController {
     }
 
     @GetMapping("/management")
-    @PreAuthorize("hasRole('MANAGEMENT')")
+    @PreAuthorize("hasRole(T(com.stocksmart.security.authorization.Roles).MANAGEMENT)")
     @Operation(summary = "Requires MANAGEMENT role")
     public ResponseEntity<ApiResponse> management(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.ok(

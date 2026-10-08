@@ -59,7 +59,8 @@ cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=local
 | `DB_PASSWORD`          | _(none — set it)_          | DB password                          |
 | `JWT_SECRET`           | dev fallback in config     | **Override in real deployments**     |
 | `JWT_EXPIRATION`       | `86400000` (24h)           | Token TTL in ms                      |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:4200`    | Tight allow-list for the frontend    |
+| `FRONTEND_URL`         | `http://localhost:4200`    | Frontend origin (CORS fallback)      |
+| `CORS_ALLOWED_ORIGINS` | _(falls back to above)_    | Tight allow-list; wins when set      |
 | `APP_SEED_ENABLED`     | `true`                     | Seed roles + demo users (`false` in prod) |
 | `APP_SEED_PASSWORD`    | `Admin@123`                | Demo password (dev only)             |
 
@@ -104,13 +105,21 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 curl http://localhost:8080/api/v1/test/protected                                     # → 401 (no token)
 ```
 
-Automated matrix: `cd backend && mvn test` (`SecurityVerificationTest`: 5 tests).
+Automated matrix: `cd backend && mvn test` (`SecurityVerificationTest`: 6 tests —
+health, login 200/401, protected 200/401, expired JWT 401, invalid JWT 401,
+admin/management RBAC 403/200, BCrypt storage).
 
 ## 8. API documentation
 
 Swagger UI (`/swagger-ui.html`) documents health, login, and the three test
 endpoints with a **Bearer/JWT** security scheme — paste the login JWT via
 “Authorize” to call protected endpoints.
+
+## 9. CI readiness
+
+A minimal `Jenkinsfile` (backend `mvn test` + frontend `ng build`) and
+`.dockerignore` files are present so CI/containerization can be introduced
+later without redesign. Docker is not required to run Day 1.
 
 ## 9. Day 1 scope
 

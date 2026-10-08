@@ -1,5 +1,6 @@
 package com.stocksmart.security.jwt;
 
+import com.stocksmart.security.authorization.Roles;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,7 +45,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String role = jwtService.extractRole(token);
             List<SimpleGrantedAuthority> authorities = role == null
                     ? List.of()
-                    : List.of(new SimpleGrantedAuthority("ROLE_" + role));
+                    : List.of(new SimpleGrantedAuthority(Roles.authority(role)));
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(username, null, authorities);
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

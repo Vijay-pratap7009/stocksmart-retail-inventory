@@ -31,8 +31,9 @@ spring:
 
 app:
   cors:
-    # Comma-separated list; keep tight for authenticated APIs (no "*")
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+    # Comma-separated list; keep tight for authenticated APIs (no "*").
+    # CORS_ALLOWED_ORIGINS wins when set; otherwise FRONTEND_URL is used.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:${FRONTEND_URL:http://localhost:4200}}
   data:
     # Seed demo users on startup (dev convenience; disable in prod via env)
     seed-enabled: ${APP_SEED_ENABLED:true}

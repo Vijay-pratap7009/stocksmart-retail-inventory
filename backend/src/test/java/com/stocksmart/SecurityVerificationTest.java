@@ -13,9 +13,14 @@ import com.stocksmart.entity.RoleName;
 import com.stocksmart.entity.User;
 import com.stocksmart.repository.RoleRepository;
 import com.stocksmart.repository.UserRepository;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import java.util.Date;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -25,7 +30,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * Day 1 security matrix: health (public), login (200/401),
- * protected (401/200), admin + management RBAC (403/200).
+ * protected (401/200), expired/invalid JWT (401), admin + management RBAC (403/200).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -42,6 +47,9 @@ class SecurityVerificationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Value("${security.jwt.secret}")
+    private String jwtSecret;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -124,6 +132,23 @@ class SecurityVerificationTest {
         mockMvc.perform(get("/api/v1/test/protected")
                         .header("Authorization", "Bearer invalid.token.here"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void expiredJwtIsRejected() throws Exception {
+        // Token signed with the real key but already past its expiration.
+        String expired = Jwts.builder()
+                .subject("admin")
+                .claim("uid", 1L)
+                .claim("role", "ADMIN")
+                .issuedAt(new Date(System.currentTimeMillis() - 120_000))
+                .expiration(new Date(System.currentTimeMillis() - 60_000))
+                .signWith(Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret)))
+                .compact();
+        mockMvc.perform(get("/api/v1/test/protected")
+                        .header("Authorization", "Bearer " + expired))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
     }
 
     @Test
