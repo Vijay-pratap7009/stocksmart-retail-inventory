@@ -1,0 +1,41 @@
+services:
+  oracle:
+    image: gvenzl/oracle-xe:21-slim-faststart
+    container_name: stocksmart-oracle
+    environment:
+      ORACLE_PASSWORD: ${DB_PASSWORD:-Stocksmart123}
+      APP_USER: ${DB_USERNAME:-stocksmart}
+      APP_USER_PASSWORD: ${DB_PASSWORD:-Stocksmart123}
+    ports:
+      - "${DB_PORT:-1521}:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "sqlplus -S system/$$ORACLE_PASSWORD@localhost:1521/XE <<< 'select 1 from dual;' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: stocksmart-backend
+    depends_on:
+      oracle:
+        condition: service_healthy
+    environment:
+      DB_HOST: oracle
+      DB_PORT: 1521
+      DB_SERVICE: XEPDB1
+      DB_USERNAME: ${DB_USERNAME:-stocksmart}
+      DB_PASSWORD: ${DB_PASSWORD:-Stocksmart123}
+      JWT_SECRET: ${JWT_SECRET:-c3RvY2tzbWFydC1kZXYtand0LXNlY3JldC0wMTIzNDU2Nzg5YWJjZGVmZ2hpamtsbW5vcA==}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4200}
+      APP_SEED_ENABLED: ${APP_SEED_ENABLED:-true}
+      APP_SEED_PASSWORD: ${APP_SEED_PASSWORD:-Admin@123}
+    ports:
+      - "8080:8080"
+
+volumes:
+  oracle-data:

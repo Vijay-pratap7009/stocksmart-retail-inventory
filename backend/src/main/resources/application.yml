@@ -1,0 +1,56 @@
+# =============================================================================
+# StockSmart — primary configuration (Oracle is the system of record)
+# All secrets/credentials come from environment variables. Never commit .env.
+# Local run WITHOUT Oracle:  mvn spring-boot:run -Dspring-boot.run.profiles=local
+# =============================================================================
+server:
+  port: 8080
+
+spring:
+  application:
+    name: stocksmart
+  datasource:
+    # Oracle thin URL assembled from env vars (defaults = local Oracle XE)
+    url: jdbc:oracle:thin:@${DB_HOST:localhost}:${DB_PORT:1521}/${DB_SERVICE:XEPDB1}
+    username: ${DB_USERNAME:stocksmart}
+    password: ${DB_PASSWORD:stocksmart}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.OracleDialect
+        format_sql: false
+        jdbc:
+          batch_size: 20
+
+app:
+  cors:
+    # Comma-separated list; keep tight for authenticated APIs (no "*")
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  data:
+    # Seed demo users on startup (dev convenience; disable in prod via env)
+    seed-enabled: ${APP_SEED_ENABLED:true}
+    default-password: ${APP_SEED_PASSWORD:Admin@123}
+
+security:
+  jwt:
+    # MUST be overridden in real deployments. >= 256-bit Base64 value.
+    secret: ${JWT_SECRET:c3RvY2tzbWFydC1kZXYtand0LXNlY3JldC0wMTIzNDU2Nzg5YWJjZGVmZ2hpamtsbW5vcA==}
+    expiration-ms: ${JWT_EXPIRATION:86400000}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.stocksmart: INFO
+    org.springframework.security: INFO

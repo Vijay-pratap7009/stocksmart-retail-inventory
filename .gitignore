@@ -1,0 +1,31 @@
+# --- Secrets / local env ---
+.env
+*.env
+
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+*.war
+
+# --- Node / Angular ---
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+*.code-workspace
+.DS_Store
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Docker ---
+.docker/
