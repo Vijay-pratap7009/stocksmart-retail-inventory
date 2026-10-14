@@ -29,6 +29,20 @@ package com.stocksmart.security.authorization;
  *   <li>SALES_USER — read inventory availability.</li>
  *   <li>MANAGEMENT — read-only inventory and transaction history.</li>
  * </ul>
+ *
+ * <p>Day 4 baseline for orders (enforced via {@code @PreAuthorize} on
+ * the order controllers plus URL matchers in {@code SecurityConfig}):
+ *
+ * <ul>
+ *   <li>ADMIN — full order access (purchase + sales, receipts, fulfillments).</li>
+ *   <li>PROCUREMENT_USER — purchase order reads+writes and goods receipts;
+ *       no sales order access.</li>
+ *   <li>SALES_USER — sales order reads+writes and fulfillments;
+ *       no purchase order access.</li>
+ *   <li>INVENTORY_MANAGER — order reads; authorized receipts and fulfillments.</li>
+ *   <li>WAREHOUSE_STAFF — order reads; authorized receiving/fulfillment operations.</li>
+ *   <li>MANAGEMENT — read-only order information.</li>
+ * </ul>
  */
 public final class Roles {
 

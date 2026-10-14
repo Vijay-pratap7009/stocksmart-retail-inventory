@@ -10,6 +10,7 @@ Modular monolith. Repo: `Vijay-pratap7009/stocksmart-retail-inventory` (branch `
 local dir `/home/vijaypratap/Code/hcl-project`). Day 1 = auth/security foundation.
 Day 2 = category/product/warehouse/supplier master data (DONE — see §3b, §6b).
 Day 3 = inventory balances + movement history (DONE — see §3c, §6c).
+Day 4 = purchase/sales orders with inventory integration (DONE — see §3d, §6d).
 
 ## 2. Stack (locked)
 
@@ -78,12 +79,34 @@ Day 3 = inventory balances + movement history (DONE — see §3c, §6c).
 - Tests: `InventoryIntegrationTest` (12 tests incl. 20-thread concurrency).
   Docs: `design.md` §2.5–2.6 + inventory RBAC, README §11–12.
 
+## 3d. What Day 4 built (all verified — see §6d)
+
+- Backend: `entity/` (PurchaseOrder/Item/Status, PurchaseReceipt(+Item),
+  SalesOrder/Item/Status, SalesFulfillment(+Item) — sequence PKs, unique
+  numbers/references, FKs, audit timestamps), `repository/` (order repos with
+  `PESSIMISTIC_WRITE lockById` + search; receipt/fulfillment repos),
+  `dto/` (order + line + receipt/fulfillment request/response),
+  `mapper/` (PurchaseOrderMapper, SalesOrderMapper),
+  `service/` (PurchaseOrderService, SalesOrderService — lifecycles, atomic
+  receipt/fulfillment joining Day 3 `receiveForOrder`/`issueForOrder`,
+  idempotency guards), `InventoryService` + `receiveForOrder`/`issueForOrder`
+  hooks (txn-aware retry guard).
+- `controller/` (`/api/v1/purchase-orders`, `/api/v1/sales-orders` + action
+  endpoints). `SecurityConfig`: PO side (reads all-but-sales; writes
+  ADMIN+PROCUREMENT; receipts +IM+WH), SO side mirrored for SALES.
+- Frontend: `core/models/order.models`, `PurchaseOrderService`,
+  `SalesOrderService`, list + detail pages with draft editors, receipt/
+  fulfillment forms, histories; routes + Home nav. `ng build` ✅.
+- Tests: `OrderIntegrationTest` (8 tests). Day 2/3 test setUps now wipe order
+  tables first (FK-safe regardless of execution order). Docs: `design.md`
+  §2.7–2.8 + order RBAC, README §12–13.
+
 ## 4. Run commands
 
 ```bash
 # Backend (Oracle):  cd backend && mvn spring-boot:run
 # Backend (no Oracle): cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=local
-# Tests:  cd backend && mvn test   # 26 tests: SecurityVerification + MasterData + Inventory
+# Tests:  cd backend && mvn test   # 34 tests: SecurityVerification + MasterData + Inventory + Order
 # Frontend: cd frontend && npm install && npm start   # :4200, demo admin/Admin@123
 # Swagger: http://localhost:8080/swagger-ui.html
 ```
@@ -136,21 +159,38 @@ Found + fixed during Day 3: `@PageableDefault(sort="createdAt,desc")` is invalid
 `HttpMessageNotReadableException` handler. Test H2 URL gained `LOCK_TIMEOUT=10000`
 for the concurrency test. No Docker, no browser, no `gh`. Live Oracle still untested.
 
+## 6d. Day 4 verified results (executed, not claimed)
+
+`mvn test` 34/34 ✅ (Day 1 6/6 + Day 2 8/8 + Day 3 12/12 + `OrderIntegrationTest`
+8/8: PO lifecycle with partial receipts → RECEIVED, PO validation + over-receipt
+rollback, receipt idempotency (no double stock), SO lifecycle → FULFILLED with
+ISSUE audit, SO validation + insufficient-stock rollback, fulfillment
+idempotency, 2-thread concurrent fulfillments (1 win + 1 409, balance exact),
+cross-role RBAC incl. no sales↔purchase access).
+Live `local`-profile curl ✅: PO create/submit/partial-receive/over-receive-409,
+SO create/confirm/partial-fulfill/over-fulfill-409, stock 60→40, ISSUE history.
+`ng build` ✅ (413 kB).
+Found + fixed during Day 4: Day 4 `ReceiptRequest` name clashed with Day 3's →
+renamed to `PurchaseReceipt*` (the `mv` briefly deleted Day 3's file; restored
+byte-identical); test helper `Map<Long,String>` vs `Long` mismatches; ISSUE
+count expectation 2→3 (1+2 lines); Day 2/3 test setUps needed order-table wipes
+(FK-safe ordering). No Docker, no browser, no `gh`. Live Oracle still untested.
+
 ## 7. Deferred (DO NOT implement until its phase)
 
 Day 2: DONE (product/category/warehouse/supplier + design.md).
 Day 3: DONE (inventory balances + movement history; product/warehouse delete
 guards active; `ISSUE` type reserved for Day 4).
-Day 4: purchase/sales orders (revisit supplier delete guard; will write `ISSUE`
-movements — do NOT let orders overwrite balances directly).
-Day 4: purchase/sales orders. Day 5: barcode/RFID/KPI/reporting. Day 6: hardening.
+Day 4: DONE (purchase/sales orders, atomic receipts/fulfillments via Day 3
+hooks, idempotency references, no cross sales↔purchase access).
+Day 5: barcode/RFID/KPI/reporting. Day 6: hardening.
 Day 7: Docker deploy + Jenkins runs. Future: forecasting/ML.
 
 ## 8. Git state
 
 Local `main`: Day 1 commits + `f7f4b62 docs: agent handoff` + `d9054da feat: Day 2`
-(+ Day 3 work uncommitted at handoff time). Remote `origin` `main` is at Day 1
-`8485bd6`; branch `day2-master-data` (= Day 2 only, no agent.md) was pushed for PR.
-Tree clean at Day 2 push. Remote `origin` set, `main` tracks `origin/main`.
++ Day 3 commit (+ Day 4 work uncommitted at handoff time). Remote `origin/main`
+accepted Day 2 via PR #1 (`56cc3a5`); branch `day3-master-data` (= Day 3 only)
+was pushed for PR. Remote `origin` set, `main` tracks `origin/main`.
 Pushing from here needs a PAT (`repo` scope); never reuse revoked/shared tokens —
 ask the user for a fresh one each time.

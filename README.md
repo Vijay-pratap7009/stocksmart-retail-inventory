@@ -246,7 +246,73 @@ product/warehouse filters) — linked from Home.
 rejection with zero side effects, atomic paired transfers, rejection matrix,
 history search, delete guards, 6-role RBAC, concurrent withdrawals staying exact).
 
-## 12. Scope checklist
+## 12. Day 4 — Purchase & Sales Orders
+
+Procurement and sales workflows wired into Day 3 inventory. Same conventions
+(services own the rules, DTOs only, centralized errors).
+
+### 12.1 Purchase orders
+
+Lifecycle `DRAFT → SUBMITTED → PARTIALLY_RECEIVED → RECEIVED`, plus `CANCELLED`
+from any open state (received stock is kept, never reversed). Lines editable
+while DRAFT; submission needs ≥1 line; receipts only on submitted/partial
+orders, never beyond remaining quantity. Each receipt records a durable
+`purchase_receipts` row (unique reference = idempotency key), increases stock
+through the Day 3 service (`RECEIPT` movements sharing the reference), and
+updates received quantities + status — all in one transaction.
+
+### 12.2 Sales orders
+
+Lifecycle `DRAFT → CONFIRMED → PARTIALLY_FULFILLED → FULFILLED`, plus
+`CANCELLED`. Confirming does **not** reserve stock. Fulfillment checks
+remaining quantity and live stock, issues through the Day 3 service (`ISSUE`
+movements sharing the fulfillment reference), and updates fulfilled
+quantities + status — all in one transaction. Failed fulfillment changes
+nothing.
+
+### 12.3 Endpoints (`/api/v1/...`, JWT required)
+
+- `/purchase-orders`: `GET` (search/status/supplierId, paged), `GET /{id}`,
+  `GET /{id}/receipts`, `POST` 201, `PUT /{id}` (draft),
+  `POST /{id}/submit`, `POST /{id}/receipts` 201, `POST /{id}/cancel`
+- `/sales-orders`: `GET` (search/status/warehouseId, paged), `GET /{id}`,
+  `GET /{id}/fulfillments`, `POST` 201, `PUT /{id}` (draft),
+  `POST /{id}/confirm`, `POST /{id}/fulfillments` 201, `POST /{id}/cancel`
+
+RBAC: PO reads (ADMIN/IM/PROCUREMENT/WH/MGMT), PO writes (ADMIN/PROCUREMENT),
+receipts (+IM/WH); SO reads (ADMIN/IM/SALES/WH/MGMT), SO writes
+(ADMIN/SALES), fulfillments (+IM/WH). No cross-access (sales↔purchase).
+
+Example:
+
+```bash
+# Purchase: create → submit → receive (procurement user)
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"supplierId":1,"warehouseId":1,"orderDate":"2026-10-14","items":[{"productId":1,"orderedQuantity":100,"unitCost":90}]}' \
+  http://localhost:8080/api/v1/purchase-orders
+curl -X POST -H "Authorization: Bearer $TOKEN" -d '{}' \
+  http://localhost:8080/api/v1/purchase-orders/1/submit
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"lines":[{"poItemId":1,"quantity":60}]}' \
+  http://localhost:8080/api/v1/purchase-orders/1/receipts
+```
+
+### 12.4 Angular screens
+
+Guarded routes `/purchase-orders`, `/purchase-orders/new|/:id` (draft editor,
+submit/cancel, receipt form with per-line quantities, receipt history) and the
+`/sales-orders` equivalents (confirm/fulfill, fulfillment history) — linked
+from Home, with validation, confirmations, status badges, and role-aware actions.
+
+### 12.5 Tests
+
+`cd backend && mvn test` — now 34 tests: Day 1 (6) + Day 2 (8) + Day 3 (12) +
+`OrderIntegrationTest` (8: PO lifecycle with partial receipts, PO validation +
+rollback, receipt idempotency, SO lifecycle with partial fulfillment, SO
+validation + rollback, fulfillment idempotency, concurrent fulfillments never
+double-issuing, cross-role RBAC).
+
+## 13. Scope checklist
 
 ### Day 1 (done)
 
@@ -277,4 +343,15 @@ history search, delete guards, 6-role RBAC, concurrent withdrawals staying exact
 - [x] Angular overview, receipt/adjust, transfer, history screens
 - [x] `InventoryIntegrationTest` (12 tests incl. concurrency) + live-curl verification
 - [x] `design.md` + README Day 3 docs
-- [ ] Day 4+ (orders, barcode/RFID, KPIs, forecasting) — **not started by design**
+
+### Day 4 (done)
+
+- [x] `purchase_orders`/`po_items`/`purchase_receipts` + `sales_orders`/`so_items`/`sales_fulfillments` tables
+- [x] Draft → submit/confirm → partial → complete lifecycles with cancel rules
+- [x] Atomic receipts/fulfillments via Day 3 service hooks (`RECEIPT`/`ISSUE` audit)
+- [x] Unique order + operation references (duplicate numbers/replays rejected)
+- [x] RBAC per order side (no sales↔purchase cross-access)
+- [x] Angular order list + detail screens with receipt/fulfillment workflows
+- [x] `OrderIntegrationTest` (8 tests incl. concurrency) + live-curl verification
+- [x] `design.md` + README Day 4 docs
+- [ ] Day 5+ (barcode/RFID, KPIs, forecasting) — **not started by design**

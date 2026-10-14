@@ -10,6 +10,10 @@ import { InventoryListComponent } from './pages/inventory/inventory-list.compone
 import { StockOperationsComponent } from './pages/inventory/stock-operations.component';
 import { TransferFormComponent } from './pages/inventory/transfer-form.component';
 import { TransactionHistoryComponent } from './pages/inventory/transaction-history.component';
+import { PurchaseOrderListComponent } from './pages/purchase-orders/purchase-order-list.component';
+import { PurchaseOrderDetailComponent } from './pages/purchase-orders/purchase-order-detail.component';
+import { SalesOrderListComponent } from './pages/sales-orders/sales-order-list.component';
+import { SalesOrderDetailComponent } from './pages/sales-orders/sales-order-detail.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -22,6 +26,12 @@ export const routes: Routes = [
   { path: 'inventory/operations', component: StockOperationsComponent, canActivate: [authGuard] },
   { path: 'inventory/transfers', component: TransferFormComponent, canActivate: [authGuard] },
   { path: 'inventory/history', component: TransactionHistoryComponent, canActivate: [authGuard] },
+  { path: 'purchase-orders', component: PurchaseOrderListComponent, canActivate: [authGuard] },
+  { path: 'purchase-orders/new', component: PurchaseOrderDetailComponent, canActivate: [authGuard] },
+  { path: 'purchase-orders/:id', component: PurchaseOrderDetailComponent, canActivate: [authGuard] },
+  { path: 'sales-orders', component: SalesOrderListComponent, canActivate: [authGuard] },
+  { path: 'sales-orders/new', component: SalesOrderDetailComponent, canActivate: [authGuard] },
+  { path: 'sales-orders/:id', component: SalesOrderDetailComponent, canActivate: [authGuard] },
   { path: '', redirectTo: '/home', pathMatch: 'full' },
   { path: '**', redirectTo: '/home' },
 ];
