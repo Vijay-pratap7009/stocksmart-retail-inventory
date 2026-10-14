@@ -188,7 +188,65 @@ Day 2 `MasterDataIntegrationTest` (8 tests: CRUD per module, duplicate-code/SKU
 409s, invalid-category 404, search/filter matrix, referenced-category delete
 409, validation 400s, missing-record 404s, full RBAC matrix).
 
-## 11. Scope checklist
+## 11. Day 3 — Inventory Management
+
+Stock balances per product-warehouse plus an append-only movement history.
+Same conventions (Controller → Service → Repository → Oracle, DTOs only,
+centralized errors).
+
+### 11.1 Rules
+
+- `inventory` holds one row per `(product_id, warehouse_id)` (unique).
+  Quantities are `BigDecimal` (`NUMBER(19,4)`), never negative.
+- Receipts create the row on first use (`OPENING_BALANCE`) and add
+  afterwards (`RECEIPT`) — no purchase order required.
+- Adjustments need direction + reason; decreases beyond stock → 409 and
+  leave no balance change and no transaction row.
+- Transfers validate everything before writing (different warehouses,
+  positive quantity, sufficient source stock), then commit source/dest
+  updates plus paired `TRANSFER_OUT`/`TRANSFER_IN` rows sharing one
+  reference — atomically. Failed transfers change nothing.
+- Concurrency: pessimistic row locks + deterministic lock order;
+  first-row creation races retry once in a fresh transaction.
+- Products/warehouses with inventory rows cannot be deleted (409).
+
+### 11.2 Endpoints (`/api/v1/...`, JWT required)
+
+- `GET /inventory` (search/productId/warehouseId, paged), `GET /inventory/{id}`,
+  `GET /inventory/product/{productId}`, `GET /inventory/warehouse/{warehouseId}`
+- `POST /inventory/receipts`, `POST /inventory/adjustments`, `POST /inventory/transfers` (201)
+- `GET /stock-transactions` (productId/warehouseId/type/reference/from/to, newest first),
+  `GET /stock-transactions/{id}`
+
+RBAC: reads for every authenticated role; receipts/adjustments/transfers for
+ADMIN, INVENTORY_MANAGER, WAREHOUSE_STAFF (others → 403).
+
+Example:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"productId":1,"warehouseId":1,"quantity":50}' \
+  http://localhost:8080/api/v1/inventory/receipts
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"productId":1,"sourceWarehouseId":1,"destinationWarehouseId":2,"quantity":10}' \
+  http://localhost:8080/api/v1/inventory/transfers
+```
+
+### 11.3 Angular screens
+
+Guarded routes `/inventory` (overview + filters + paging), `/inventory/operations`
+(receipt + adjustment forms with confirmation), `/inventory/transfers`
+(same-warehouse blocked client-side), `/inventory/history` (type/reference/
+product/warehouse filters) — linked from Home.
+
+### 11.4 Tests
+
+`cd backend && mvn test` — now 26 tests: Day 1 (6) + Day 2 (8) +
+`InventoryIntegrationTest` (12: receipts, validation, adjustments, negative-stock
+rejection with zero side effects, atomic paired transfers, rejection matrix,
+history search, delete guards, 6-role RBAC, concurrent withdrawals staying exact).
+
+## 12. Scope checklist
 
 ### Day 1 (done)
 
@@ -209,4 +267,14 @@ Day 2 `MasterDataIntegrationTest` (8 tests: CRUD per module, duplicate-code/SKU
 - [x] Angular list + create/edit screens for all four modules
 - [x] `MasterDataIntegrationTest` (8 tests) + live-curl verification
 - [x] `design.md` data model, README Day 2 docs
-- [ ] Day 3+ (inventory, orders, barcode/RFID, KPIs, forecasting) — **not started by design**
+
+### Day 3 (done)
+
+- [x] `inventory` (unique product-warehouse) + append-only `stock_transactions` tables
+- [x] Receipt / adjustment / transfer services (transactional, locked, audited)
+- [x] Inventory + history REST APIs with filters, pagination, DTOs
+- [x] RBAC (reads for all roles; writes for ADMIN/INVENTORY_MANAGER/WAREHOUSE_STAFF)
+- [x] Angular overview, receipt/adjust, transfer, history screens
+- [x] `InventoryIntegrationTest` (12 tests incl. concurrency) + live-curl verification
+- [x] `design.md` + README Day 3 docs
+- [ ] Day 4+ (orders, barcode/RFID, KPIs, forecasting) — **not started by design**

@@ -16,8 +16,8 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("StockSmart API")
-                        .version("v1 — Day 2 master data")
-                        .description("Retail Inventory Optimization & Supply Chain Management — Day 2: health, auth, RBAC verification, category / product / warehouse / supplier master data."))
+                        .version("v1 — Day 3 inventory")
+                        .description("Retail Inventory Optimization & Supply Chain Management — Day 3: health, auth, RBAC verification, master data, inventory balances / movements / history."))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components().addSecuritySchemes(
                         "bearerAuth",

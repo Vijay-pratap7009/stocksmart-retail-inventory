@@ -8,6 +8,7 @@ import com.stocksmart.exception.ConflictException;
 import com.stocksmart.exception.ResourceNotFoundException;
 import com.stocksmart.mapper.ProductMapper;
 import com.stocksmart.repository.CategoryRepository;
+import com.stocksmart.repository.InventoryRepository;
 import com.stocksmart.repository.ProductRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,13 +25,16 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final InventoryRepository inventoryRepository;
     private final ProductMapper productMapper;
 
     public ProductService(ProductRepository productRepository,
                           CategoryRepository categoryRepository,
+                          InventoryRepository inventoryRepository,
                           ProductMapper productMapper) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
+        this.inventoryRepository = inventoryRepository;
         this.productMapper = productMapper;
     }
 
@@ -90,8 +94,12 @@ public class ProductService {
 
     @Transactional
     public void delete(Long id) {
-        // No Day 2 dependents (inventory arrives Day 3) — direct delete is safe.
-        productRepository.delete(requireById(id));
+        Product product = requireById(id);
+        if (inventoryRepository.existsByProductId(id)) {
+            throw new ConflictException(
+                    "Product '" + product.getSku() + "' cannot be deleted because inventory records reference it");
+        }
+        productRepository.delete(product);
     }
 
     private Product requireById(Long id) {

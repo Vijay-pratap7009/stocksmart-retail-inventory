@@ -30,6 +30,15 @@ import { environment } from '../../../environments/environment';
           <a routerLink="/suppliers">Suppliers</a>
         </nav>
       </section>
+      <section class="card">
+        <h2>Inventory (Day 3)</h2>
+        <nav>
+          <a routerLink="/inventory">Stock overview</a>
+          <a routerLink="/inventory/operations">Receipts &amp; adjustments</a>
+          <a routerLink="/inventory/transfers">Transfers</a>
+          <a routerLink="/inventory/history">History</a>
+        </nav>
+      </section>
     </main>
   `,
   styles: [`
