@@ -1,8 +1,8 @@
-# DESIGN.md — StockSmart Data Model & API Design (Day 2 actual)
+# DESIGN.md — StockSmart Data Model & API Design (Day 3 actual)
 
 > Living design record. Day 1 = auth foundation (`users`, `roles`).
-> Day 2 adds four master-data tables. Inventory / orders / barcode / RFID /
-> KPIs are explicitly out of scope — see §6.
+> Day 2 = master data. Day 3 adds inventory balances + movement history.
+> Orders / barcode / RFID / KPIs are explicitly out of scope — see §6.
 
 ## 1. Entity-relationship overview
 
@@ -11,12 +11,18 @@ roles 1 — N users            (Day 1, unchanged)
 
 categories 1 — N products    (Day 2: FK products.category_id → categories.category_id)
 
-warehouses                   (Day 2: standalone master table, no dependents yet)
-suppliers                    (Day 2: standalone master table, no dependents yet)
+products 1 — N inventory N — 1 warehouses   (Day 3: unique (product_id, warehouse_id))
+
+products 1 — N stock_transactions           (Day 3: FK stock_transactions.product_id)
+warehouses 1 — N stock_transactions         (Day 3: FK stock_transactions.warehouse_id)
+users 1 — N stock_transactions              (Day 3: FK stock_transactions.performed_by_user_id)
+
+suppliers                    (Day 2: standalone; purchase orders arrive Day 4)
 ```
 
-Future (not implemented): Day 3 inventory references `products` + `warehouses`;
-Day 4 purchase orders reference `suppliers` (+ `products`/`warehouses`).
+Future (not implemented): Day 4 purchase/sales orders reference `suppliers`
+(+ `products` / `warehouses`); `ISSUE` movements will be written by Day 4
+sales flows.
 
 ## 2. Tables (Oracle system of record; H2 `local` profile mirrors via JPA)
 
@@ -72,6 +78,43 @@ Same shape as warehouses with `supplier_id` / `suppliers_seq`,
 `supplier_code` UNIQUE (`uk_suppliers_code`), `supplier_name`,
 `contact_person`, `email`, `phone`, address fields, `active`, timestamps.
 
+### 2.5 `inventory` (Day 3)
+
+| Column | Type (Oracle) | Constraints |
+|---|---|---|
+| `inventory_id` | NUMBER(19), `inventory_seq` | PK |
+| `product_id` | NUMBER(19) | NOT NULL, FK `fk_inventory_product` → `products` |
+| `warehouse_id` | NUMBER(19) | NOT NULL, FK `fk_inventory_warehouse` → `warehouses` |
+| `quantity_on_hand` | NUMBER(19,4) | NOT NULL, ≥ 0 (fractional units allowed) |
+| `created_at` / `updated_at` | TIMESTAMP | set by entity |
+
+Unique `(product_id, warehouse_id)` (`uk_inventory_product_warehouse`) —
+one balance row per product-warehouse pair. Quantities change only via
+`InventoryService` (receipt/adjust/transfer), always with an audit row.
+
+Delete rules (Day 3, new): product/warehouse deletes are blocked with 409
+while `inventory` rows reference them.
+
+### 2.6 `stock_transactions` (Day 3, append-only)
+
+| Column | Type (Oracle) | Constraints |
+|---|---|---|
+| `transaction_id` | NUMBER(19), `stock_transactions_seq` | PK |
+| `product_id` / `warehouse_id` | NUMBER(19) | NOT NULL, FKs to `products` / `warehouses` |
+| `transaction_type` | VARCHAR2(30) | NOT NULL, `TransactionType` enum |
+| `quantity` | NUMBER(19,4) | NOT NULL, always positive (direction in type) |
+| `quantity_before` / `quantity_after` | NUMBER(19,4) | NOT NULL, balance snapshot |
+| `reference_number` | VARCHAR2(60) | NOT NULL (`RCT-`/`ADJ-`/`TRF-` prefixed; shared by transfer legs) |
+| `reason` | VARCHAR2(500) | mandatory for adjustments |
+| `performed_by_user_id` | NUMBER(19) | NOT NULL, FK → `users` |
+| `notes` | VARCHAR2(1000) | nullable |
+| `created_at` | TIMESTAMP | movement timestamp, immutable |
+
+No update/delete API exists — corrections are new movements. First-ever
+receipt for a pair is recorded as `OPENING_BALANCE`, later ones as `RECEIPT`.
+`ISSUE` is reserved for Day 4. Transfers write paired `TRANSFER_OUT` +
+`TRANSFER_IN` rows sharing one reference.
+
 ## 3. Conventions
 
 - PKs: `GenerationType.SEQUENCE` (`allocationSize = 1`) per table — Oracle-friendly.
@@ -82,10 +125,16 @@ Same shape as warehouses with `supplier_id` / `suppliers_seq`,
 - Blank optional strings stored as NULL.
 - Layering: Controller → Service → Repository → Oracle. JPA entities never
   leave the service layer (mapped to `*Response` DTOs via `*Mapper` components).
-- Errors: 400 validation, 404 `ResourceNotFoundException`, 409 `ConflictException`
-  (duplicates, referenced-category delete) + `DataIntegrityViolationException` safety net,
-  401/403 via Day 1 handlers (+ `AccessDeniedException` → 403 safety net for
-  method-level denials past the filter chain).
+- Errors: 400 validation (incl. malformed JSON, same-warehouse transfers),
+  404 `ResourceNotFoundException`, 409 `ConflictException`
+  (duplicates, referenced deletes) + `InsufficientStockException` (over-draws,
+  failed transfers leave zero state change) + `DataIntegrityViolationException`
+  safety net, 401/403 via Day 1 handlers (+ `AccessDeniedException` → 403
+  safety net for method-level denials past the filter chain).
+- Concurrency: `PESSIMISTIC_WRITE` row locks on stock changes, deterministic
+  lock order (warehouse id ascending) for transfers, single-`@Transactional`
+  movement + audit writes, retry-once in a fresh transaction on first-row
+  creation races.
 
 ## 4. REST API (`/api/v1/...`, paged `Page<DTO>`, `size=20` default)
 
@@ -95,6 +144,8 @@ Same shape as warehouses with `supplier_id` / `suppliers_seq`,
 | `/products` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (sku/name), `active`, `categoryId`, `page/size/sort` |
 | `/warehouses` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (code/name/city), `active`, `page/size/sort` |
 | `/suppliers` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (code/name/contact/email/phone), `active`, `page/size/sort` |
+| `/inventory` | GET (page), GET /{id}, GET /product/{id}, GET /warehouse/{id}, POST /receipts 201, POST /adjustments 201, POST /transfers 201 | `search` (sku/name), `productId`, `warehouseId`, `page/size/sort` |
+| `/stock-transactions` | GET (page, newest first), GET /{id} | `productId`, `warehouseId`, `type`, `reference`, `from`, `to` (ISO-8601), `page/size/sort` |
 
 ## 5. RBAC baseline (filter-level matchers + `@PreAuthorize`, backend is the boundary)
 
@@ -109,10 +160,19 @@ Same shape as warehouses with `supplier_id` / `suppliers_seq`,
 
 R = GET, W = POST/PUT/DELETE, — = no access (403). No token → 401.
 
+Day 3 inventory baseline (filter-level matchers + `@PreAuthorize`):
+
+| Role | Inventory reads + history | Receipts / adjustments / transfers |
+|---|---|---|
+| ADMIN | R | W |
+| INVENTORY_MANAGER | R | W |
+| WAREHOUSE_STAFF | R | W |
+| PROCUREMENT_USER | R | — |
+| SALES_USER | R | — |
+| MANAGEMENT | R | — |
+
 ## 6. Deferred (do not build until its phase)
 
-- Day 3: inventory balances/adjustments/transfers referencing products + warehouses.
-- Day 4: purchase/sales orders referencing suppliers (+ products/warehouses).
+- Day 4: purchase/sales orders referencing suppliers (+ products/warehouses);
+  `ISSUE` movements; supplier delete guard still open (no dependents yet).
 - Day 5: barcode/RFID/KPI/reporting. Day 6: hardening. Day 7: Docker/Jenkins runs.
-- Warehouse/supplier delete guards must be revisited when Day 3/4 FKs land
-  (currently direct delete — no dependents exist yet).

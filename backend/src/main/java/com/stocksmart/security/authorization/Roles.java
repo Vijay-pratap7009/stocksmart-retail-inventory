@@ -16,6 +16,19 @@ package com.stocksmart.security.authorization;
  *   <li>SALES_USER — read access to categories and products.</li>
  *   <li>MANAGEMENT — read-only master-data access.</li>
  * </ul>
+ *
+ * <p>Day 3 baseline for inventory (enforced via {@code @PreAuthorize} on
+ * the inventory controller plus URL matchers in {@code SecurityConfig}):
+ *
+ * <ul>
+ *   <li>ADMIN — full inventory access, receipts, adjustments, transfers.</li>
+ *   <li>INVENTORY_MANAGER — view inventory/history, receive, adjust, transfer.</li>
+ *   <li>WAREHOUSE_STAFF — view inventory/history, receive, adjust, transfer
+ *       (authorized warehouse operations).</li>
+ *   <li>PROCUREMENT_USER — read inventory/history for procurement decisions.</li>
+ *   <li>SALES_USER — read inventory availability.</li>
+ *   <li>MANAGEMENT — read-only inventory and transaction history.</li>
+ * </ul>
  */
 public final class Roles {
 
