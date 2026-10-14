@@ -8,8 +8,10 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -44,6 +46,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleNotFound(
             ResourceNotFoundException ex, HttpServletRequest request) {
         return body(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleConflict(
+            ConflictException ex, HttpServletRequest request) {
+        return body(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrity(
+            DataIntegrityViolationException ex, HttpServletRequest request) {
+        log.info("Data integrity violation on {}: {}", request.getRequestURI(), ex.getMessage());
+        return body(HttpStatus.CONFLICT, "Conflict",
+                "Request conflicts with existing data (duplicate or referenced record)", request);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodLevelDenial(
+            AccessDeniedException ex, HttpServletRequest request) {
+        // Safety net for @PreAuthorize denials that fire inside the DispatcherServlet
+        // (past the filter chain, where CustomAccessDeniedHandler cannot see them).
+        log.info("Forbidden request to {}: {}", request.getRequestURI(), ex.getMessage());
+        return body(HttpStatus.FORBIDDEN, "Forbidden",
+                "Access denied: insufficient role", request);
     }
 
     @ExceptionHandler(Exception.class)

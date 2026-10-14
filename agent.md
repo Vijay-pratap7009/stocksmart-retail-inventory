@@ -7,7 +7,8 @@
 
 **StockSmart — Retail Inventory Optimization & Supply Chain Management.**
 Modular monolith. Repo: `Vijay-pratap7009/stocksmart-retail-inventory` (branch `main`,
-local dir `/home/vijaypratap/Code/hcl-project`). Day 1 = auth/security foundation ONLY.
+local dir `/home/vijaypratap/Code/hcl-project`). Day 1 = auth/security foundation.
+Day 2 = category/product/warehouse/supplier master data (DONE — see §3b, §6b).
 
 ## 2. Stack (locked)
 
@@ -38,6 +39,24 @@ local dir `/home/vijaypratap/Code/hcl-project`). Day 1 = auth/security foundatio
   `JWT_EXPIRATION`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS` (wins when set),
   `APP_SEED_ENABLED`, `APP_SEED_PASSWORD`. Never commit `.env`/secrets.
 
+## 3b. What Day 2 built (all verified — see §6b)
+
+- Backend `com.stocksmart`: `entity/` (Category, Product [FK→Category], Warehouse,
+  Supplier — sequence PKs, unique codes/SKU uppercased, audit timestamps),
+  `repository/` (search `@Query` + `existsBy*IgnoreCase`), `dto/` (Request/Response
+  per module), `mapper/` (4 mappers), `service/` (Category/Product/Warehouse/
+  SupplierService — 409 duplicates, 404 refs, referenced-category delete guard),
+  `controller/` (`/api/v1/categories|products|warehouses|suppliers` — paged CRUD,
+  201/204, `@PreAuthorize`), `exception/ConflictException` (+ `DataIntegrityViolation`
+  → 409 and `AccessDeniedException` → 403 safety nets in `GlobalExceptionHandler`).
+- `SecurityConfig`: Day 2 URL matchers (GET reads per matrix; writes ADMIN+IM for
+  cat/prod/wh, ADMIN+PROCUREMENT for suppliers) mirroring `@PreAuthorize`.
+  `Roles` javadoc now documents the matrix. `OpenApiConfig` → "Day 2 master data".
+- Frontend: `core/models/master-data.models`, 4 services, 4 guarded list+form
+  pages (`/categories|products|warehouses|suppliers`), Home nav. Product form loads
+  categories from the API. `ng build` ✅.
+- Tests: `MasterDataIntegrationTest` (8 tests). Docs: `design.md` (new), README §10–11.
+
 ## 4. Run commands
 
 ```bash
@@ -64,9 +83,26 @@ RBAC 403/200 matrix, BCrypt); live curl matrix all ✅ incl. CORS echo of `FRONT
 `ng build` ✅; `ng serve` ✅. NOT browser-executed: guard redirect click-through
 (no browser here — confirm where one exists).
 
+## 6b. Day 2 verified results (executed, not claimed)
+
+`mvn test` 14/14 ✅ (Day 1 6/6 + `MasterDataIntegrationTest` 8/8: category CRUD +
+duplicate 409, product valid/invalid-category + duplicate SKU + price/name 400s,
+search/category/active matrix, referenced-category delete 409→204, warehouse +
+supplier CRUD + duplicate 409 + email 400, full 6-role RBAC matrix, 404s).
+Live `local`-profile curl ✅: create/list category, duplicate 409, product create,
+bad-category 404, referenced delete 409, MANAGEMENT write 403 / read 200, no-token
+401, warehouse/supplier create, `/v3/api-docs` 200. `ng build` ✅ (334 kB).
+Found + fixed during Day 2: `@PreAuthorize`-only denials rendered 500 past the
+filter chain — fixed via URL matchers in `SecurityConfig` + `AccessDeniedException`
+→ 403 safety net. No Docker, no browser (no Karma), no `gh`. Live Oracle still
+untested here; Day 2 schema is JPA-managed (`ddl-auto: update`) like Day 1.
+
 ## 7. Deferred (DO NOT implement until its phase)
 
-Day 2: product/category/warehouse/supplier. Day 3: inventory/adjustment/transfer.
+Day 2: DONE (product/category/warehouse/supplier + design.md).
+Day 3: inventory/adjustment/transfer (needs FKs to products/warehouses;
+revisit warehouse delete guard). Day 4: purchase/sales orders (revisit supplier
+delete guard).
 Day 4: purchase/sales orders. Day 5: barcode/RFID/KPI/reporting. Day 6: hardening.
 Day 7: Docker deploy + Jenkins runs. Future: forecasting/ML.
 

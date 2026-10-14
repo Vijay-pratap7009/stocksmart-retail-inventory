@@ -1,11 +1,12 @@
 # StockSmart — Retail Inventory Optimization & Supply Chain Management
 
-Day 1 foundation: runnable full-stack base with **Oracle connectivity, JWT authentication,
-role-based authorization (RBAC), and Angular login** — ready for Day 2 master-data work
-without architectural rework.
+Day 2 master data: **Category, Product, Warehouse, Supplier CRUD** with
+search/filter/pagination, RBAC, and Angular screens — on top of the Day 1
+**Oracle connectivity, JWT authentication, RBAC, and Angular login** foundation.
 
-> Scope guard: Day 1 intentionally contains **no** product / inventory / supplier /
-> order / barcode / RFID / KPI / reporting / forecasting logic.
+> Scope guard: Day 2 contains **no** inventory quantities / adjustments /
+> transfers, purchase/sales orders, barcode / RFID, KPI / reporting /
+> forecasting logic. Those belong to Day 3+.
 
 ---
 
@@ -119,9 +120,77 @@ endpoints with a **Bearer/JWT** security scheme — paste the login JWT via
 
 A minimal `Jenkinsfile` (backend `mvn test` + frontend `ng build`) and
 `.dockerignore` files are present so CI/containerization can be introduced
-later without redesign. Docker is not required to run Day 1.
+later without redesign. Docker is not required to run Day 2.
 
-## 9. Day 1 scope
+## 10. Day 2 — Master Data Management
+
+Four modules, same conventions as Day 1 (Controller → Service → Repository →
+Oracle, DTOs only on the wire, constructor injection, centralized errors).
+
+| Module | Key fields | Business rules |
+|---|---|---|
+| Categories | code (unique), name, description, active | duplicate codes → 409; delete blocked (409) while products reference the category |
+| Products | SKU (unique), name, category FK, brand, unit, cost/selling price, active | valid category required (else 404); duplicate SKU → 409; prices ≥ 0; filter by `categoryId`/`active`; search SKU/name |
+| Warehouses | code (unique), name, address/city/state/postal, contact person/email/phone, active | duplicate codes → 409; email/phone validated; search code/name/city |
+| Suppliers | code (unique), name, contact person/email/phone, address/city/state/postal, active | duplicate codes → 409; email/phone validated; search code/name/contact info |
+
+Tables: `categories`, `products` (FK `fk_products_category` → categories),
+`warehouses`, `suppliers` — sequence PKs, unique business codes, audit
+timestamps. See `design.md` for the full data model.
+
+### 10.1 Endpoints (`/api/v1/...`, JWT required)
+
+Each group supports `GET` (paged list) / `GET /{id}` / `POST` (201) /
+`PUT /{id}` / `DELETE` (204), with `search`, `active`, `page`, `size`, `sort`
+params (products add `categoryId`):
+
+- `/api/v1/categories`
+- `/api/v1/products`
+- `/api/v1/warehouses`
+- `/api/v1/suppliers`
+
+RBAC baseline (backend-enforced, filter + `@PreAuthorize`):
+
+| Role | Categories | Products | Warehouses | Suppliers |
+|---|---|---|---|---|
+| ADMIN | RW | RW | RW | RW |
+| INVENTORY_MANAGER | RW | RW | RW | R |
+| PROCUREMENT_USER | R | R | R | RW |
+| WAREHOUSE_STAFF | R | R | R | — |
+| SALES_USER | R | R | — | — |
+| MANAGEMENT | R | R | R | R |
+
+Example:
+
+```bash
+# Categories (admin)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/categories?search=elec
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"code":"ELEC","name":"Electronics"}' http://localhost:8080/api/v1/categories
+
+# Products in a category
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/products?categoryId=1&active=true'
+```
+
+### 10.2 Angular screens
+
+Guarded routes `/categories`, `/products`, `/warehouses`, `/suppliers`
+(linked from Home): tables with search + filters, create/edit forms
+(product form loads categories from the API), validation, loading/empty
+states, API error display, delete confirmation, role-aware write buttons
+(backend remains the security boundary).
+
+### 10.3 Tests
+
+`cd backend && mvn test` — Day 1 `SecurityVerificationTest` (6 tests) plus
+Day 2 `MasterDataIntegrationTest` (8 tests: CRUD per module, duplicate-code/SKU
+409s, invalid-category 404, search/filter matrix, referenced-category delete
+409, validation 400s, missing-record 404s, full RBAC matrix).
+
+## 11. Scope checklist
+
+### Day 1 (done)
 
 - [x] Backend + Angular project structure
 - [x] Oracle connectivity (env-driven) + H2 `local` fallback profile
@@ -131,4 +200,13 @@ later without redesign. Docker is not required to run Day 1.
 - [x] Protected verification endpoints + global exception handler + CORS + OpenAPI
 - [x] Angular login / interceptor / guard / landing page
 - [x] README, `.env.example`, `.gitignore`, Docker-ready
-- [ ] Everything Day 2+ (products, inventory, suppliers, orders, barcode/RFID, KPIs, forecasting) — **not started by design**
+
+### Day 2 (done)
+
+- [x] `categories` / `products` (FK) / `warehouses` / `suppliers` tables + constraints
+- [x] CRUD REST APIs with pagination, search/filter, DTOs, 400/404/409 handling
+- [x] RBAC matrix (filter-level + `@PreAuthorize`; `AccessDeniedException` → 403 safety net)
+- [x] Angular list + create/edit screens for all four modules
+- [x] `MasterDataIntegrationTest` (8 tests) + live-curl verification
+- [x] `design.md` data model, README Day 2 docs
+- [ ] Day 3+ (inventory, orders, barcode/RFID, KPIs, forecasting) — **not started by design**
