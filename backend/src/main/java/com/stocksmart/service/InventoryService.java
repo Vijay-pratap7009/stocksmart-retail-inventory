@@ -33,6 +33,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -113,6 +114,12 @@ public class InventoryService {
         try {
             return writeTransaction.execute(status -> doReceipt(request));
         } catch (DataIntegrityViolationException firstAttempt) {
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                // Called inside a larger (order) transaction: retrying in the same
+                // session after a flush failure is unsafe — propagate so the whole
+                // operation rolls back atomically instead.
+                throw firstAttempt;
+            }
             // Concurrent first-receipt creation race: the row now exists —
             // retry once against the locked row.
             return writeTransaction.execute(status -> doReceipt(request));
@@ -127,9 +134,71 @@ public class InventoryService {
         try {
             return writeTransaction.execute(status -> doTransfer(request));
         } catch (DataIntegrityViolationException firstAttempt) {
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                throw firstAttempt;
+            }
             // Concurrent destination-row creation race — retry once.
             return writeTransaction.execute(status -> doTransfer(request));
         }
+    }
+
+    // ---- Order integration hooks (Day 4) ----
+    //
+    // Called by the purchase/sales order services from inside THEIR
+    // @Transactional methods, so stock change + audit row + order update
+    // commit or roll back as one atomic unit. These methods deliberately use
+    // no TransactionTemplate of their own (TransactionTemplate defaults to
+    // PROPAGATION_REQUIRED and would join anyway) and perform no retry:
+    // any failure propagates to roll back the whole order operation.
+
+    /**
+     * Increase stock for a purchase receipt. Creates the balance row on first
+     * use. Must be called inside the caller's transaction.
+     */
+    public StockTransactionResponse receiveForOrder(Long productId, Long warehouseId,
+                                                    BigDecimal quantity, String referenceNumber,
+                                                    User actor, String notes) {
+        Product product = requireProduct(productId);
+        Warehouse warehouse = requireWarehouse(warehouseId);
+        Inventory row = lockOrCreate(product, warehouse);
+        BigDecimal before = row.getQuantityOnHand();
+        BigDecimal after = before.add(quantity);
+        row.setQuantityOnHand(after);
+        row.touch();
+        inventoryRepository.save(row);
+        StockTransaction txn = transactionRepository.save(new StockTransaction(
+                product, warehouse, TransactionType.RECEIPT, quantity, before, after,
+                referenceNumber, null, actor, blankToNull(notes)));
+        return transactionMapper.toResponse(txn);
+    }
+
+    /**
+     * Decrease stock for a sales fulfillment, recording an ISSUE movement.
+     * Must be called inside the caller's transaction.
+     */
+    public StockTransactionResponse issueForOrder(Long productId, Long warehouseId,
+                                                  BigDecimal quantity, String referenceNumber,
+                                                  User actor, String notes) {
+        Product product = requireProduct(productId);
+        Warehouse warehouse = requireWarehouse(warehouseId);
+        Inventory row = inventoryRepository
+                .lockByProductAndWarehouse(product.getId(), warehouse.getId())
+                .orElse(null);
+        BigDecimal before = row != null ? row.getQuantityOnHand() : BigDecimal.ZERO;
+        if (row == null || before.compareTo(quantity) < 0) {
+            throw new InsufficientStockException(
+                    "Insufficient stock for SKU '" + product.getSku()
+                            + "' at warehouse '" + warehouse.getCode()
+                            + "': available " + before + ", requested " + quantity);
+        }
+        BigDecimal after = before.subtract(quantity);
+        row.setQuantityOnHand(after);
+        row.touch();
+        inventoryRepository.save(row);
+        StockTransaction txn = transactionRepository.save(new StockTransaction(
+                product, warehouse, TransactionType.ISSUE, quantity, before, after,
+                referenceNumber, null, actor, blankToNull(notes)));
+        return transactionMapper.toResponse(txn);
     }
 
     // ---- Operation cores (run inside writeTransaction) ----

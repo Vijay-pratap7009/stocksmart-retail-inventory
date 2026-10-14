@@ -18,7 +18,11 @@ import com.stocksmart.exception.InsufficientStockException;
 import com.stocksmart.repository.CategoryRepository;
 import com.stocksmart.repository.InventoryRepository;
 import com.stocksmart.repository.ProductRepository;
+import com.stocksmart.repository.PurchaseOrderRepository;
+import com.stocksmart.repository.PurchaseReceiptRepository;
 import com.stocksmart.repository.RoleRepository;
+import com.stocksmart.repository.SalesFulfillmentRepository;
+import com.stocksmart.repository.SalesOrderRepository;
 import com.stocksmart.repository.StockTransactionRepository;
 import com.stocksmart.repository.UserRepository;
 import com.stocksmart.repository.WarehouseRepository;
@@ -79,6 +83,18 @@ class InventoryIntegrationTest {
     private StockTransactionRepository transactionRepository;
 
     @Autowired
+    private PurchaseReceiptRepository purchaseReceiptRepository;
+
+    @Autowired
+    private SalesFulfillmentRepository salesFulfillmentRepository;
+
+    @Autowired
+    private PurchaseOrderRepository purchaseOrderRepository;
+
+    @Autowired
+    private SalesOrderRepository salesOrderRepository;
+
+    @Autowired
     private InventoryService inventoryService;
 
     @Autowired
@@ -95,6 +111,10 @@ class InventoryIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        purchaseReceiptRepository.deleteAll();
+        salesFulfillmentRepository.deleteAll();
+        purchaseOrderRepository.deleteAll();
+        salesOrderRepository.deleteAll();
         transactionRepository.deleteAll();
         inventoryRepository.deleteAll();
         productRepository.deleteAll();

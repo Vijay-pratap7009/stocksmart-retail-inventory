@@ -39,6 +39,13 @@ import { environment } from '../../../environments/environment';
           <a routerLink="/inventory/history">History</a>
         </nav>
       </section>
+      <section class="card">
+        <h2>Orders (Day 4)</h2>
+        <nav>
+          <a routerLink="/purchase-orders">Purchase orders</a>
+          <a routerLink="/sales-orders">Sales orders</a>
+        </nav>
+      </section>
     </main>
   `,
   styles: [`

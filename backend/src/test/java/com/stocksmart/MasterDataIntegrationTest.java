@@ -13,8 +13,14 @@ import com.stocksmart.entity.Role;
 import com.stocksmart.entity.RoleName;
 import com.stocksmart.entity.User;
 import com.stocksmart.repository.CategoryRepository;
+import com.stocksmart.repository.InventoryRepository;
 import com.stocksmart.repository.ProductRepository;
+import com.stocksmart.repository.PurchaseOrderRepository;
+import com.stocksmart.repository.PurchaseReceiptRepository;
 import com.stocksmart.repository.RoleRepository;
+import com.stocksmart.repository.SalesFulfillmentRepository;
+import com.stocksmart.repository.SalesOrderRepository;
+import com.stocksmart.repository.StockTransactionRepository;
 import com.stocksmart.repository.SupplierRepository;
 import com.stocksmart.repository.UserRepository;
 import com.stocksmart.repository.WarehouseRepository;
@@ -58,6 +64,24 @@ class MasterDataIntegrationTest {
     private SupplierRepository supplierRepository;
 
     @Autowired
+    private PurchaseReceiptRepository purchaseReceiptRepository;
+
+    @Autowired
+    private SalesFulfillmentRepository salesFulfillmentRepository;
+
+    @Autowired
+    private PurchaseOrderRepository purchaseOrderRepository;
+
+    @Autowired
+    private SalesOrderRepository salesOrderRepository;
+
+    @Autowired
+    private InventoryRepository inventoryRepository;
+
+    @Autowired
+    private StockTransactionRepository transactionRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -71,6 +95,12 @@ class MasterDataIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        purchaseReceiptRepository.deleteAll();
+        salesFulfillmentRepository.deleteAll();
+        purchaseOrderRepository.deleteAll();
+        salesOrderRepository.deleteAll();
+        transactionRepository.deleteAll();
+        inventoryRepository.deleteAll();
         productRepository.deleteAll();
         categoryRepository.deleteAll();
         warehouseRepository.deleteAll();

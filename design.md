@@ -1,8 +1,8 @@
-# DESIGN.md — StockSmart Data Model & API Design (Day 3 actual)
+# DESIGN.md — StockSmart Data Model & API Design (Day 4 actual)
 
-> Living design record. Day 1 = auth foundation (`users`, `roles`).
-> Day 2 = master data. Day 3 adds inventory balances + movement history.
-> Orders / barcode / RFID / KPIs are explicitly out of scope — see §6.
+> Living design record. Day 1 = auth, Day 2 = master data, Day 3 = inventory,
+> Day 4 = purchase/sales orders with inventory integration.
+> Barcode / RFID / KPIs are explicitly out of scope — see §6.
 
 ## 1. Entity-relationship overview
 
@@ -17,12 +17,26 @@ products 1 — N stock_transactions           (Day 3: FK stock_transactions.prod
 warehouses 1 — N stock_transactions         (Day 3: FK stock_transactions.warehouse_id)
 users 1 — N stock_transactions              (Day 3: FK stock_transactions.performed_by_user_id)
 
-suppliers                    (Day 2: standalone; purchase orders arrive Day 4)
+suppliers                    (Day 2 table; Day 4 purchase orders reference it)
+
+Day 4 order graphs (see §2.7–2.8):
+
+```
+suppliers 1 — N purchase_orders 1 — N po_items N — 1 products
+warehouses 1 — N purchase_orders (destination)
+
+purchase_orders 1 — N purchase_receipts 1 — N purchase_receipt_items
+po_items 1 — N purchase_receipt_items (which line was received)
+
+warehouses 1 — N sales_orders 1 — N so_items N — 1 products
+users 1 — N sales_orders (created_by)
+
+sales_orders 1 — N sales_fulfillments 1 — N sales_fulfillment_items
+so_items 1 — N sales_fulfillment_items (which line was issued)
 ```
 
-Future (not implemented): Day 4 purchase/sales orders reference `suppliers`
-(+ `products` / `warehouses`); `ISSUE` movements will be written by Day 4
-sales flows.
+Receipts write `RECEIPT` and fulfillments write `ISSUE` rows in
+`stock_transactions` sharing the receipt/fulfillment reference.
 
 ## 2. Tables (Oracle system of record; H2 `local` profile mirrors via JPA)
 
@@ -112,8 +126,53 @@ while `inventory` rows reference them.
 
 No update/delete API exists — corrections are new movements. First-ever
 receipt for a pair is recorded as `OPENING_BALANCE`, later ones as `RECEIPT`.
-`ISSUE` is reserved for Day 4. Transfers write paired `TRANSFER_OUT` +
-`TRANSFER_IN` rows sharing one reference.
+`ISSUE` rows are written by Day 4 sales fulfillments (reference = fulfillment
+number); purchase receipts write `RECEIPT` rows (reference = receipt number).
+Transfers write paired `TRANSFER_OUT` + `TRANSFER_IN` rows sharing one reference.
+
+### 2.7 Purchase orders (Day 4)
+
+`purchase_orders`: `po_id` (`purchase_orders_seq` PK), `po_number` UNIQUE
+(`uk_po_number`, uppercased, generated `PO-xxxxxxxx` when absent),
+`supplier_id` FK (`fk_po_supplier`), `warehouse_id` FK (`fk_po_warehouse`,
+destination), `order_date` DATE, `expected_delivery_date` DATE nullable,
+`status` (`DRAFT/SUBMITTED/PARTIALLY_RECEIVED/RECEIVED/CANCELLED`),
+`notes`, `created_by_user_id` FK, audit timestamps. Lines editable while DRAFT
+(replaced wholesale via PUT, orphanRemoval).
+
+`po_items`: `po_item_id` PK, `po_id` FK, `product_id` FK,
+`ordered_quantity` NUMBER(19,4) > 0, `received_quantity` NUMBER(19,4) ≥ 0 and
+≤ ordered (app-enforced), `unit_cost` NUMBER(19,2) ≥ 0 captured at order time.
+
+`purchase_receipts`: `receipt_id` PK, `receipt_number` UNIQUE
+(`uk_por_number`; client idempotency key or generated `POR-xxxxxxxx`),
+`po_id` FK, `received_by_user_id` FK, `received_at`, `notes`.
+`purchase_receipt_items`: receipt FK, `po_item_id` FK (which line),
+`product_id` FK, `quantity` > 0.
+
+Lifecycle: DRAFT → SUBMITTED (needs ≥1 line) → PARTIALLY_RECEIVED → RECEIVED;
+CANCELLED from any open state (received stock is kept, never reversed).
+Receipts only on SUBMITTED/PARTIALLY_RECEIVED; never beyond remaining quantity.
+
+### 2.8 Sales orders (Day 4)
+
+`sales_orders`: `so_id` (`sales_orders_seq` PK), `so_number` UNIQUE
+(`uk_so_number`, generated `SO-xxxxxxxx` when absent), `warehouse_id` FK,
+`customer_name` (minimal, no CRM), `customer_contact`, `order_date` DATE,
+`status` (`DRAFT/CONFIRMED/PARTIALLY_FULFILLED/FULFILLED/CANCELLED`), `notes`,
+`created_by_user_id` FK, timestamps.
+
+`so_items`: like PO lines with `fulfilled_quantity` and `unit_price`
+NUMBER(19,2) captured at order time.
+
+`sales_fulfillments` / `sales_fulfillment_items`: mirror the receipt
+structures (`uk_sof_number`, generated `SOF-xxxxxxxx`, `so_item_id` FK).
+
+Lifecycle: DRAFT → CONFIRMED (needs ≥1 line; does NOT reserve stock) →
+PARTIALLY_FULFILLED → FULFILLED; CANCELLED from any open state.
+Fulfillment checks remaining quantity AND live stock, issues via the Day 3
+service (`ISSUE` type), and updates fulfilled quantities atomically.
+
 
 ## 3. Conventions
 
@@ -135,6 +194,11 @@ receipt for a pair is recorded as `OPENING_BALANCE`, later ones as `RECEIPT`.
   lock order (warehouse id ascending) for transfers, single-`@Transactional`
   movement + audit writes, retry-once in a fresh transaction on first-row
   creation races.
+- Orders: receipt/fulfillment run in ONE transaction joining the Day 3
+  inventory hooks (`receiveForOrder`/`issueForOrder`, no separate commit);
+  order rows are locked (`lockById`) so concurrent receipts/fulfillments on
+  one order serialize. Receipt/fulfillment references are unique idempotency
+  keys — replays are rejected, never double-applied.
 
 ## 4. REST API (`/api/v1/...`, paged `Page<DTO>`, `size=20` default)
 
@@ -146,6 +210,8 @@ receipt for a pair is recorded as `OPENING_BALANCE`, later ones as `RECEIPT`.
 | `/suppliers` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (code/name/contact/email/phone), `active`, `page/size/sort` |
 | `/inventory` | GET (page), GET /{id}, GET /product/{id}, GET /warehouse/{id}, POST /receipts 201, POST /adjustments 201, POST /transfers 201 | `search` (sku/name), `productId`, `warehouseId`, `page/size/sort` |
 | `/stock-transactions` | GET (page, newest first), GET /{id} | `productId`, `warehouseId`, `type`, `reference`, `from`, `to` (ISO-8601), `page/size/sort` |
+| `/purchase-orders` | GET (page), GET /{id}, GET /{id}/receipts, POST 201, PUT /{id} (draft), POST /{id}/submit, POST /{id}/receipts 201, POST /{id}/cancel | `search` (poNumber), `status`, `supplierId`, `page/size/sort` |
+| `/sales-orders` | GET (page), GET /{id}, GET /{id}/fulfillments, POST 201, PUT /{id} (draft), POST /{id}/confirm, POST /{id}/fulfillments 201, POST /{id}/cancel | `search` (soNumber/customer), `status`, `warehouseId`, `page/size/sort` |
 
 ## 5. RBAC baseline (filter-level matchers + `@PreAuthorize`, backend is the boundary)
 
@@ -171,8 +237,20 @@ Day 3 inventory baseline (filter-level matchers + `@PreAuthorize`):
 | SALES_USER | R | — |
 | MANAGEMENT | R | — |
 
+Day 4 order baseline (filter-level matchers + `@PreAuthorize`):
+
+| Role | PO reads | PO writes | PO receipts | SO reads | SO writes | SO fulfillments |
+|---|---|---|---|---|---|---|
+| ADMIN | R | W | W | R | W | W |
+| PROCUREMENT_USER | R | W | W | — | — | — |
+| SALES_USER | — | — | — | R | W | W |
+| INVENTORY_MANAGER | R | — | W | R | — | W |
+| WAREHOUSE_STAFF | R | — | W | R | — | W |
+| MANAGEMENT | R | — | — | R | — | — |
+
 ## 6. Deferred (do not build until its phase)
 
-- Day 4: purchase/sales orders referencing suppliers (+ products/warehouses);
-  `ISSUE` movements; supplier delete guard still open (no dependents yet).
 - Day 5: barcode/RFID/KPI/reporting. Day 6: hardening. Day 7: Docker/Jenkins runs.
+- Supplier delete guard still open (purchase orders reference suppliers —
+  revisit when deletion of suppliers with orders must be blocked; currently the
+  FK constraint is the backstop).

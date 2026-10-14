@@ -94,6 +94,24 @@ public class SecurityConfig {
                                 "/api/v1/inventory/adjustments/**",
                                 "/api/v1/inventory/transfers/**")
                         .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "WAREHOUSE_STAFF")
+                        // Day 4 orders — reads per matrix, then writes.
+                        // Mirrors the @PreAuthorize rules on the order controllers.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/purchase-orders/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "PROCUREMENT_USER",
+                                "WAREHOUSE_STAFF", "MANAGEMENT")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/sales-orders/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "SALES_USER",
+                                "WAREHOUSE_STAFF", "MANAGEMENT")
+                        .requestMatchers("/api/v1/purchase-orders/*/receipts/**")
+                        .hasAnyRole("ADMIN", "PROCUREMENT_USER", "INVENTORY_MANAGER",
+                                "WAREHOUSE_STAFF")
+                        .requestMatchers("/api/v1/sales-orders/*/fulfillments/**")
+                        .hasAnyRole("ADMIN", "SALES_USER", "INVENTORY_MANAGER",
+                                "WAREHOUSE_STAFF")
+                        .requestMatchers("/api/v1/purchase-orders/**")
+                        .hasAnyRole("ADMIN", "PROCUREMENT_USER")
+                        .requestMatchers("/api/v1/sales-orders/**")
+                        .hasAnyRole("ADMIN", "SALES_USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
