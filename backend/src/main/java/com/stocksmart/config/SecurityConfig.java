@@ -8,6 +8,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -66,6 +67,24 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/api/v1/test/admin").hasRole("ADMIN")
                         .requestMatchers("/api/v1/test/management").hasRole("MANAGEMENT")
+                        // Day 2 master data — reads first (GET), then writes.
+                        // Mirrors the @PreAuthorize rules on the controllers (defense in depth:
+                        // filter-level denial renders 403 via CustomAccessDeniedHandler).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/categories/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/warehouses/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "WAREHOUSE_STAFF",
+                                "PROCUREMENT_USER", "MANAGEMENT")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/suppliers/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "PROCUREMENT_USER", "MANAGEMENT")
+                        .requestMatchers("/api/v1/categories/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER")
+                        .requestMatchers("/api/v1/products/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER")
+                        .requestMatchers("/api/v1/warehouses/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER")
+                        .requestMatchers("/api/v1/suppliers/**")
+                        .hasAnyRole("ADMIN", "PROCUREMENT_USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
