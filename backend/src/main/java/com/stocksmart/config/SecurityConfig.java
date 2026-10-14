@@ -85,6 +85,15 @@ public class SecurityConfig {
                         .hasAnyRole("ADMIN", "INVENTORY_MANAGER")
                         .requestMatchers("/api/v1/suppliers/**")
                         .hasAnyRole("ADMIN", "PROCUREMENT_USER")
+                        // Day 3 inventory — reads for every authenticated role;
+                        // stock-changing writes for operational roles.
+                        // Mirrors the @PreAuthorize rules on InventoryController.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/inventory/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/stock-transactions/**").authenticated()
+                        .requestMatchers("/api/v1/inventory/receipts/**",
+                                "/api/v1/inventory/adjustments/**",
+                                "/api/v1/inventory/transfers/**")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "WAREHOUSE_STAFF")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

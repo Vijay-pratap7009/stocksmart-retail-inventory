@@ -6,6 +6,7 @@ import com.stocksmart.entity.Warehouse;
 import com.stocksmart.exception.ConflictException;
 import com.stocksmart.exception.ResourceNotFoundException;
 import com.stocksmart.mapper.WarehouseMapper;
+import com.stocksmart.repository.InventoryRepository;
 import com.stocksmart.repository.WarehouseRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,11 +22,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class WarehouseService {
 
     private final WarehouseRepository warehouseRepository;
+    private final InventoryRepository inventoryRepository;
     private final WarehouseMapper warehouseMapper;
 
     public WarehouseService(WarehouseRepository warehouseRepository,
+                            InventoryRepository inventoryRepository,
                             WarehouseMapper warehouseMapper) {
         this.warehouseRepository = warehouseRepository;
+        this.inventoryRepository = inventoryRepository;
         this.warehouseMapper = warehouseMapper;
     }
 
@@ -86,9 +90,12 @@ public class WarehouseService {
 
     @Transactional
     public void delete(Long id) {
-        // Day 3 inventory relations do not exist yet — direct delete is safe.
-        // Revisit when stock-by-warehouse tables land.
-        warehouseRepository.delete(requireById(id));
+        Warehouse warehouse = requireById(id);
+        if (inventoryRepository.existsByWarehouseId(id)) {
+            throw new ConflictException(
+                    "Warehouse '" + warehouse.getCode() + "' cannot be deleted because inventory records reference it");
+        }
+        warehouseRepository.delete(warehouse);
     }
 
     private Warehouse requireById(Long id) {
