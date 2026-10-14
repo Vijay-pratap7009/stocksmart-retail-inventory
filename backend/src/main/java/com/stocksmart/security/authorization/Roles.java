@@ -1,8 +1,21 @@
 package com.stocksmart.security.authorization;
 
 /**
- * Central role names for authorization checks. Day 1 proves the backend can
- * distinguish roles; business capabilities per role arrive in later phases.
+ * Central role names for authorization checks.
+ *
+ * <p>Day 2 baseline for master data (enforced via {@code @PreAuthorize} on
+ * the category / product / warehouse / supplier controllers):
+ *
+ * <ul>
+ *   <li>ADMIN — full master-data access (all modules, read + write).</li>
+ *   <li>INVENTORY_MANAGER — product, category and warehouse management
+ *       (read + write); read access to suppliers.</li>
+ *   <li>PROCUREMENT_USER — supplier management (read + write); read access
+ *       to categories, products and warehouses.</li>
+ *   <li>WAREHOUSE_STAFF — read access to categories, products, warehouses.</li>
+ *   <li>SALES_USER — read access to categories and products.</li>
+ *   <li>MANAGEMENT — read-only master-data access.</li>
+ * </ul>
  */
 public final class Roles {
 
