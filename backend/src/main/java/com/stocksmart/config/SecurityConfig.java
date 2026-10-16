@@ -112,6 +112,25 @@ public class SecurityConfig {
                         .hasAnyRole("ADMIN", "PROCUREMENT_USER")
                         .requestMatchers("/api/v1/sales-orders/**")
                         .hasAnyRole("ADMIN", "SALES_USER")
+                        // Day 5 RFID — reads for every authenticated role; tag mapping
+                        // writes ADMIN only; read processing (informational, never
+                        // stock-changing) for operational + sales roles; MANAGEMENT
+                        // stays read-only. Mirrors the @PreAuthorize rules on RfidController.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/rfid/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/rfid/tags").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/rfid/tags/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/rfid/reads")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "WAREHOUSE_STAFF",
+                                "PROCUREMENT_USER", "SALES_USER")
+                        // Day 5 dashboard — core inventory KPIs for all authenticated
+                        // roles; order summaries mirror the Day 4 read matrices.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/dashboard/purchase-orders")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "PROCUREMENT_USER",
+                                "WAREHOUSE_STAFF", "MANAGEMENT")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/dashboard/sales-fulfillment")
+                        .hasAnyRole("ADMIN", "INVENTORY_MANAGER", "SALES_USER",
+                                "WAREHOUSE_STAFF", "MANAGEMENT")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/dashboard/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

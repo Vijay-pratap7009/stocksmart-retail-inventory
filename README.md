@@ -1,12 +1,12 @@
 # StockSmart — Retail Inventory Optimization & Supply Chain Management
 
-Day 2 master data: **Category, Product, Warehouse, Supplier CRUD** with
-search/filter/pagination, RBAC, and Angular screens — on top of the Day 1
-**Oracle connectivity, JWT authentication, RBAC, and Angular login** foundation.
+Day 5 adds **barcode operations, RFID tag mapping + reader simulation, and an
+inventory KPI dashboard** on top of Day 4 purchase/sales orders, Day 3
+inventory balances, Day 2 master data, and the Day 1 auth foundation.
 
-> Scope guard: Day 2 contains **no** inventory quantities / adjustments /
-> transfers, purchase/sales orders, barcode / RFID, KPI / reporting /
-> forecasting logic. Those belong to Day 3+.
+> Scope guard: Days 1–5 are complete. Day 6 = hardening, Day 7 = Docker/Jenkins.
+> There is no forecasting/ML; RFID is simulator-backed (no physical hardware is
+> integrated), and reads never change stock.
 
 ---
 
@@ -120,7 +120,7 @@ endpoints with a **Bearer/JWT** security scheme — paste the login JWT via
 
 A minimal `Jenkinsfile` (backend `mvn test` + frontend `ng build`) and
 `.dockerignore` files are present so CI/containerization can be introduced
-later without redesign. Docker is not required to run Day 2.
+later without redesign. Docker is not required to run Days 1–5.
 
 ## 10. Day 2 — Master Data Management
 
@@ -241,7 +241,7 @@ product/warehouse filters) — linked from Home.
 
 ### 11.4 Tests
 
-`cd backend && mvn test` — now 26 tests: Day 1 (6) + Day 2 (8) +
+`cd backend && mvn test` — as of Day 3: 26 tests: Day 1 (6) + Day 2 (8) +
 `InventoryIntegrationTest` (12: receipts, validation, adjustments, negative-stock
 rejection with zero side effects, atomic paired transfers, rejection matrix,
 history search, delete guards, 6-role RBAC, concurrent withdrawals staying exact).
@@ -306,13 +306,83 @@ from Home, with validation, confirmations, status badges, and role-aware actions
 
 ### 12.5 Tests
 
-`cd backend && mvn test` — now 34 tests: Day 1 (6) + Day 2 (8) + Day 3 (12) +
+`cd backend && mvn test` — as of Day 4: 34 tests: Day 1 (6) + Day 2 (8) + Day 3 (12) +
 `OrderIntegrationTest` (8: PO lifecycle with partial receipts, PO validation +
 rollback, receipt idempotency, SO lifecycle with partial fulfillment, SO
 validation + rollback, fulfillment idempotency, concurrent fulfillments never
 double-issuing, cross-role RBAC).
 
-## 13. Scope checklist
+## 13. Day 5 — Barcode, RFID & KPI Dashboard
+
+### 13.1 Barcode operations
+
+`products` gain an optional `barcode` (unique when present, stored UPPERCASE,
+pattern `^[A-Za-z0-9.\-+/]{4,60}$`) and a `minimum_stock_level` (optional,
+default 0) that drives low-stock KPIs. Resolve a scan with
+`GET /api/v1/products/barcode/{barcode}` (or `.../sku/{sku}`). **Lookups never
+change stock** — the Angular `/scan` screen shows the product and links to the
+receipt/adjustment workflow for real movements.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/products/barcode/8901234567890
+```
+
+### 13.2 RFID (tag mapping + simulator)
+
+- `rfid_tags` (EPC → product, unique EPC, deactivate-instead-of-delete) and
+  append-only `rfid_read_events` (unique `event_reference` idempotency key —
+  replays → 409).
+- Endpoints: `GET/POST/PUT /api/v1/rfid/tags`, `GET /api/v1/rfid/reader`,
+  `POST/GET /api/v1/rfid/reads`.
+- Reader abstraction `RfidReader` with the built-in `SimulatedRfidReader`
+  (`SIMULATED-READER-01`). Processed reads are `RESOLVED`, `INACTIVE_TAG` or
+  `UNKNOWN_TAG` and are always labeled simulated/hardware by the server.
+  **No physical reader is integrated; reads never change stock.**
+- RBAC: tag writes ADMIN; read processing ADMIN/INVENTORY_MANAGER/
+  WAREHOUSE_STAFF/PROCUREMENT_USER/SALES_USER; RFID reads any authenticated
+  role; MANAGEMENT read-only.
+- Angular `/rfid`: reader card, tag registry (register/remap/deactivate for
+  ADMIN), simulate/process read form, processed-events log.
+
+```bash
+# Register a tag (admin), then simulate a read
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"epcCode":"3034F9C2A1B0","productId":1}' http://localhost:8080/api/v1/rfid/tags
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"epcCode":"3034F9C2A1B0","eventReference":"dock-in-001","simulate":true}' \
+  http://localhost:8080/api/v1/rfid/reads
+```
+
+### 13.3 Inventory KPI dashboard
+
+`GET /api/v1/dashboard/summary | low-stock | stockouts | purchase-orders |
+sales-fulfillment | recent-transactions` — all computed from persisted rows
+(no caching, no fake metrics), optionally scoped by `warehouseId` (unknown →
+404). Definitions:
+
+- Low stock: `0 < quantity_on_hand < COALESCE(minimum_stock_level, 0)`
+  (deficit = minimum − on-hand; exactly-at-minimum is not low; zero is a stockout).
+- Stockout: `quantity_on_hand = 0`.
+- `inventoryValue = SUM(quantity_on_hand × cost_price)` scale 2 HALF_UP —
+  a cost-basis estimate, not an accounting valuation.
+- Pending POs = `SUBMITTED + PARTIALLY_RECEIVED`; pending SOs =
+  `CONFIRMED + PARTIALLY_FULFILLED` with remaining units summed per line.
+
+RBAC mirrors the Day 4 read matrix (PO summary excludes SALES_USER, SO summary
+excludes PROCUREMENT_USER; core KPIs readable by every role) — the backend is
+the boundary, the Angular `/dashboard` card just hides itself on a 403.
+
+### 13.4 Tests
+
+`cd backend && mvn test` — now 61 tests: Day 1 (6) + Day 2 (8) + Day 3 (12) +
+Day 4 (8) + `BarcodeRfidIntegrationTest` (15: barcode/SKU lookups + stock
+unchanged proof, duplicate/invalid barcode 409/400, tag lifecycle + duplicate
+EPC, simulated/external reads, unknown/inactive statuses, event-reference
+dedup, RFID RBAC) + `DashboardIntegrationTest` (12: exact KPI values, low-stock
+boundaries, warehouse filter/paging, cost-basis rounding, empty dataset,
+pending counts, no-double-count, recent movements, auth matrix).
+
+## 14. Scope checklist
 
 ### Day 1 (done)
 
@@ -354,4 +424,15 @@ double-issuing, cross-role RBAC).
 - [x] Angular order list + detail screens with receipt/fulfillment workflows
 - [x] `OrderIntegrationTest` (8 tests incl. concurrency) + live-curl verification
 - [x] `design.md` + README Day 4 docs
-- [ ] Day 5+ (barcode/RFID, KPIs, forecasting) — **not started by design**
+
+### Day 5 (done)
+
+- [x] `barcode` + `minimum_stock_level` on products (unique when set, validated, migration-safe column)
+- [x] `GET /products/barcode/{barcode}` + `GET /products/sku/{sku}` lookups — read-only, never change stock
+- [x] `rfid_tags` + `rfid_read_events` tables; `RfidReader` abstraction + `SimulatedRfidReader`
+- [x] RFID tag register/remap/deactivate + read processing (idempotent, RBAC-enforced)
+- [x] Dashboard KPIs (summary, low stock, stockouts, PO/SO summaries, recent movements) with warehouse filter
+- [x] Angular `/scan`, `/rfid`, `/dashboard` screens + product form fields + Home nav
+- [x] `BarcodeRfidIntegrationTest` (15) + `DashboardIntegrationTest` (12); Day 2–4 test set-ups made RFID-FK-safe
+- [x] `design.md` + README Day 5 docs
+- [ ] Day 6+ (hardening, Docker/Jenkins, forecasting) — **not started by design**

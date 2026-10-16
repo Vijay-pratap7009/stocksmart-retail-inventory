@@ -14,6 +14,9 @@ import { PurchaseOrderListComponent } from './pages/purchase-orders/purchase-ord
 import { PurchaseOrderDetailComponent } from './pages/purchase-orders/purchase-order-detail.component';
 import { SalesOrderListComponent } from './pages/sales-orders/sales-order-list.component';
 import { SalesOrderDetailComponent } from './pages/sales-orders/sales-order-detail.component';
+import { DashboardComponent } from './pages/dashboard/dashboard.component';
+import { BarcodeScanComponent } from './pages/barcode/barcode-scan.component';
+import { RfidConsoleComponent } from './pages/rfid/rfid-console.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -32,6 +35,9 @@ export const routes: Routes = [
   { path: 'sales-orders', component: SalesOrderListComponent, canActivate: [authGuard] },
   { path: 'sales-orders/new', component: SalesOrderDetailComponent, canActivate: [authGuard] },
   { path: 'sales-orders/:id', component: SalesOrderDetailComponent, canActivate: [authGuard] },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  { path: 'scan', component: BarcodeScanComponent, canActivate: [authGuard] },
+  { path: 'rfid', component: RfidConsoleComponent, canActivate: [authGuard] },
   { path: '', redirectTo: '/home', pathMatch: 'full' },
   { path: '**', redirectTo: '/home' },
 ];

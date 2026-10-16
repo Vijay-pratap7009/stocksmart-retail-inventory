@@ -3,6 +3,7 @@ package com.stocksmart.repository;
 import com.stocksmart.entity.SalesOrder;
 import com.stocksmart.entity.SalesOrderStatus;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -35,4 +36,13 @@ public interface SalesOrderRepository extends JpaRepository<SalesOrder, Long> {
                             @Param("status") SalesOrderStatus status,
                             @Param("warehouseId") Long warehouseId,
                             Pageable pageable);
+
+    /**
+     * Day 5 KPI aggregation: order counts per status, optionally scoped to a
+     * warehouse. Rows are counted once (no joins to lines).
+     */
+    @Query("SELECT o.status, COUNT(o) FROM SalesOrder o "
+            + "WHERE (:warehouseId IS NULL OR o.warehouse.id = :warehouseId) "
+            + "GROUP BY o.status")
+    List<Object[]> countByStatus(@Param("warehouseId") Long warehouseId);
 }

@@ -43,6 +43,7 @@ import { AuthService } from '../../core/services/auth.service';
         <form [formGroup]="form" (ngSubmit)="onSubmit()">
           <div class="grid">
             <label>SKU<input type="text" formControlName="sku" placeholder="PHN-001" /></label>
+            <label>Barcode<input type="text" formControlName="barcode" placeholder="Optional, e.g. 8901234567890" /></label>
             <label>Name<input type="text" formControlName="name" placeholder="Phone" /></label>
             <label>Category
               <select formControlName="categoryId">
@@ -54,6 +55,7 @@ import { AuthService } from '../../core/services/auth.service';
             <label>Unit<input type="text" formControlName="unit" placeholder="PCS" /></label>
             <label>Cost price<input type="number" step="0.01" min="0" formControlName="costPrice" /></label>
             <label>Selling price<input type="number" step="0.01" min="0" formControlName="sellingPrice" /></label>
+            <label>Minimum stock level<input type="number" step="1" min="0" formControlName="minimumStockLevel" /></label>
             <label class="check"><input type="checkbox" formControlName="active" /> Active</label>
           </div>
           <label>Description<input type="text" formControlName="description" placeholder="Optional" /></label>
@@ -68,14 +70,16 @@ import { AuthService } from '../../core/services/auth.service';
         <p *ngIf="loading" class="muted">Loading…</p>
         <p *ngIf="!loading && items.length === 0" class="muted">No products found.</p>
         <table *ngIf="!loading && items.length > 0">
-          <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Cost</th><th>Price</th><th>Status</th><th *ngIf="canWrite">Actions</th></tr></thead>
+          <thead><tr><th>SKU</th><th>Barcode</th><th>Name</th><th>Category</th><th>Cost</th><th>Price</th><th>Min</th><th>Status</th><th *ngIf="canWrite">Actions</th></tr></thead>
           <tbody>
             <tr *ngFor="let p of items">
               <td><code>{{ p.sku }}</code></td>
+              <td><code>{{ p.barcode ?? '—' }}</code></td>
               <td>{{ p.name }}</td>
               <td>{{ p.categoryName ?? '—' }}</td>
               <td>{{ p.costPrice }}</td>
               <td>{{ p.sellingPrice }}</td>
+              <td>{{ p.minimumStockLevel ?? 0 }}</td>
               <td>{{ p.active ? 'Active' : 'Inactive' }}</td>
               <td *ngIf="canWrite">
                 <button class="link" (click)="onEdit(p)">Edit</button>
@@ -140,6 +144,7 @@ export class ProductListComponent implements OnInit {
 
   form = this.fb.group({
     sku: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
+    barcode: ['', [Validators.pattern(/^[A-Za-z0-9.\-+/]{4,60}$/)]],
     name: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(150)]],
     description: [''],
     categoryId: [null as number | null, [Validators.required]],
@@ -147,6 +152,7 @@ export class ProductListComponent implements OnInit {
     unit: ['PCS', [Validators.required, Validators.maxLength(20)]],
     costPrice: [0, [Validators.required, Validators.min(0)]],
     sellingPrice: [0, [Validators.required, Validators.min(0)]],
+    minimumStockLevel: [0, [Validators.min(0)]],
     active: [true],
   });
 
@@ -198,7 +204,7 @@ export class ProductListComponent implements OnInit {
 
   onNew(): void {
     this.editing = null;
-    this.form.reset({ sku: '', name: '', description: '', categoryId: null, brand: '', unit: 'PCS', costPrice: 0, sellingPrice: 0, active: true });
+    this.form.reset({ sku: '', barcode: '', name: '', description: '', categoryId: null, brand: '', unit: 'PCS', costPrice: 0, sellingPrice: 0, minimumStockLevel: 0, active: true });
     this.showForm = true;
     this.message = null;
   }
@@ -206,8 +212,9 @@ export class ProductListComponent implements OnInit {
   onEdit(p: Product): void {
     this.editing = p;
     this.form.reset({
-      sku: p.sku, name: p.name, description: p.description ?? '', categoryId: p.categoryId,
-      brand: p.brand ?? '', unit: p.unit, costPrice: p.costPrice, sellingPrice: p.sellingPrice, active: p.active,
+      sku: p.sku, barcode: p.barcode ?? '', name: p.name, description: p.description ?? '', categoryId: p.categoryId,
+      brand: p.brand ?? '', unit: p.unit, costPrice: p.costPrice, sellingPrice: p.sellingPrice,
+      minimumStockLevel: p.minimumStockLevel ?? 0, active: p.active,
     });
     this.showForm = true;
     this.message = null;
@@ -224,9 +231,11 @@ export class ProductListComponent implements OnInit {
     this.error = null;
     this.message = null;
     const v = this.form.getRawValue();
+    const barcode = v.barcode?.trim() ? v.barcode.trim().toUpperCase() : null;
     const req = {
-      sku: v.sku!, name: v.name!, description: v.description || null, categoryId: v.categoryId!,
+      sku: v.sku!, name: v.name!, description: v.description || null, barcode, categoryId: v.categoryId!,
       brand: v.brand || null, unit: v.unit!, costPrice: Number(v.costPrice), sellingPrice: Number(v.sellingPrice),
+      minimumStockLevel: v.minimumStockLevel === null || v.minimumStockLevel === undefined ? null : Number(v.minimumStockLevel),
       active: !!v.active,
     };
     const done = {

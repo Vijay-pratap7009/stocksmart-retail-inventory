@@ -22,20 +22,27 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * PRODUCTS — sellable-item master data (Day 2).
+ * PRODUCTS — sellable-item master data (Day 2, extended Day 5).
  *
  * <p>Child side of CATEGORIES 1—N PRODUCTS. Carries commercial attributes
  * only — stock quantities and movements belong to Day 3 and are
  * deliberately absent here.
  *
+ * <p>Day 5 additions: optional {@code barcode} (unique when present; blank
+ * means "not scannable by barcode") and {@code minimumStockLevel}, the
+ * product-level reorder threshold used by the dashboard low-stock rule.
+ * The column is nullable for rows created before Day 5; new rows default
+ * to ZERO (= no threshold configured).
+ *
  * <p>Oracle mapping: NUMBER(19) PK via sequence, VARCHAR2 text,
- * NUMBER(19,2) monetary values.
+ * NUMBER(19,2) monetary values, NUMBER(19,4) threshold.
  */
 @Entity
 @Table(
         name = "products",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_products_sku", columnNames = "sku")
+                @UniqueConstraint(name = "uk_products_sku", columnNames = "sku"),
+                @UniqueConstraint(name = "uk_products_barcode", columnNames = "barcode")
         }
 )
 public class Product {
@@ -52,6 +59,16 @@ public class Product {
     @Pattern(regexp = "^[A-Za-z0-9-_]+$", message = "SKU may contain only letters, digits, dash and underscore")
     @Column(name = "sku", nullable = false, unique = true, length = 50)
     private String sku;
+
+    /**
+     * Optional scannable identifier (EAN/UPC/Code128 etc.), stored UPPERCASE,
+     * unique when present. Lookup is case-insensitive.
+     */
+    @Size(max = 60, message = "Barcode must be at most 60 characters")
+    @Pattern(regexp = "^[A-Za-z0-9.\\-+/]{4,60}$",
+            message = "Barcode may contain only letters, digits, dot, dash, plus and slash (4-60 characters)")
+    @Column(name = "barcode", length = 60)
+    private String barcode;
 
     @NotBlank(message = "Product name is required")
     @Size(min = 2, max = 150, message = "Product name must be 2-150 characters")
@@ -92,6 +109,16 @@ public class Product {
     @Column(name = "selling_price", nullable = false, precision = 19, scale = 2)
     private BigDecimal sellingPrice;
 
+    /**
+     * Product-level minimum stock level (Day 5). Low stock is evaluated per
+     * product-warehouse row: {@code 0 < quantity_on_hand < minimumStockLevel}.
+     * Nullable only for rows created before Day 5 (treated as ZERO).
+     */
+    @DecimalMin(value = "0.00", message = "Minimum stock level must not be negative")
+    @Digits(integer = 15, fraction = 4, message = "Minimum stock level must have at most 4 decimal places")
+    @Column(name = "minimum_stock_level", precision = 19, scale = 4)
+    private BigDecimal minimumStockLevel = BigDecimal.ZERO;
+
     @NotNull
     @Column(name = "active", nullable = false)
     private boolean active = true;
@@ -105,10 +132,11 @@ public class Product {
     protected Product() {
     }
 
-    public Product(String sku, String name, String description, Category category,
+    public Product(String sku, String barcode, String name, String description, Category category,
                    String brand, String unit, BigDecimal costPrice,
-                   BigDecimal sellingPrice, boolean active) {
+                   BigDecimal sellingPrice, BigDecimal minimumStockLevel, boolean active) {
         this.sku = sku;
+        this.barcode = barcode;
         this.name = name;
         this.description = description;
         this.category = category;
@@ -116,6 +144,7 @@ public class Product {
         this.unit = unit;
         this.costPrice = costPrice;
         this.sellingPrice = sellingPrice;
+        this.minimumStockLevel = minimumStockLevel != null ? minimumStockLevel : BigDecimal.ZERO;
         this.active = active;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
@@ -131,6 +160,14 @@ public class Product {
 
     public void setSku(String sku) {
         this.sku = sku;
+    }
+
+    public String getBarcode() {
+        return barcode;
+    }
+
+    public void setBarcode(String barcode) {
+        this.barcode = barcode;
     }
 
     public String getName() {
@@ -187,6 +224,19 @@ public class Product {
 
     public void setSellingPrice(BigDecimal sellingPrice) {
         this.sellingPrice = sellingPrice;
+    }
+
+    public BigDecimal getMinimumStockLevel() {
+        return minimumStockLevel;
+    }
+
+    public void setMinimumStockLevel(BigDecimal minimumStockLevel) {
+        this.minimumStockLevel = minimumStockLevel;
+    }
+
+    /** Null-safe threshold: legacy rows without a value behave as "no threshold". */
+    public BigDecimal getEffectiveMinimumStockLevel() {
+        return minimumStockLevel != null ? minimumStockLevel : BigDecimal.ZERO;
     }
 
     public boolean isActive() {

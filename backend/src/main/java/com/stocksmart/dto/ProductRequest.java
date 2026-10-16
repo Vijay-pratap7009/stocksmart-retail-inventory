@@ -16,6 +16,12 @@ public class ProductRequest {
     @Pattern(regexp = "^[A-Za-z0-9-_]+$", message = "SKU may contain only letters, digits, dash and underscore")
     private String sku;
 
+    /** Optional scannable identifier (Day 5); unique when present. */
+    @Size(max = 60, message = "Barcode must be at most 60 characters")
+    @Pattern(regexp = "^[A-Za-z0-9.\\-+/]{4,60}$",
+            message = "Barcode may contain only letters, digits, dot, dash, plus and slash (4-60 characters)")
+    private String barcode;
+
     @NotBlank(message = "Product name is required")
     @Size(min = 2, max = 150, message = "Product name must be 2-150 characters")
     private String name;
@@ -43,6 +49,11 @@ public class ProductRequest {
     @Digits(integer = 15, fraction = 2, message = "Selling price must have at most 2 decimal places")
     private BigDecimal sellingPrice;
 
+    /** Optional reorder threshold (Day 5); null/omitted means 0 = no threshold. */
+    @DecimalMin(value = "0.00", message = "Minimum stock level must not be negative")
+    @Digits(integer = 15, fraction = 4, message = "Minimum stock level must have at most 4 decimal places")
+    private BigDecimal minimumStockLevel;
+
     private Boolean active;
 
     public String getSku() {
@@ -51,6 +62,14 @@ public class ProductRequest {
 
     public void setSku(String sku) {
         this.sku = sku;
+    }
+
+    public String getBarcode() {
+        return barcode;
+    }
+
+    public void setBarcode(String barcode) {
+        this.barcode = barcode;
     }
 
     public String getName() {
@@ -107,6 +126,14 @@ public class ProductRequest {
 
     public void setSellingPrice(BigDecimal sellingPrice) {
         this.sellingPrice = sellingPrice;
+    }
+
+    public BigDecimal getMinimumStockLevel() {
+        return minimumStockLevel;
+    }
+
+    public void setMinimumStockLevel(BigDecimal minimumStockLevel) {
+        this.minimumStockLevel = minimumStockLevel;
     }
 
     public Boolean getActive() {

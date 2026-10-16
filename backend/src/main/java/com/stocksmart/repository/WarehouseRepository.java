@@ -15,6 +15,8 @@ public interface WarehouseRepository extends JpaRepository<Warehouse, Long> {
 
     boolean existsByCodeIgnoreCase(String code);
 
+    long countByActiveTrue();
+
     @Query("SELECT w FROM Warehouse w "
             + "WHERE (:active IS NULL OR w.active = :active) "
             + "AND (:search IS NULL OR LOWER(w.name) LIKE LOWER(CONCAT('%', :search, '%')) "

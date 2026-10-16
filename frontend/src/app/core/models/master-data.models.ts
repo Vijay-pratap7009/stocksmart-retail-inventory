@@ -30,6 +30,7 @@ export interface Product {
   sku: string;
   name: string;
   description?: string | null;
+  barcode?: string | null;
   categoryId: number;
   categoryName?: string | null;
   categoryCode?: string | null;
@@ -37,6 +38,7 @@ export interface Product {
   unit: string;
   costPrice: number;
   sellingPrice: number;
+  minimumStockLevel?: number | null;
   active: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -46,11 +48,13 @@ export interface ProductRequest {
   sku: string;
   name: string;
   description?: string | null;
+  barcode?: string | null;
   categoryId: number;
   brand?: string | null;
   unit: string;
   costPrice: number;
   sellingPrice: number;
+  minimumStockLevel?: number | null;
   active?: boolean | null;
 }
 

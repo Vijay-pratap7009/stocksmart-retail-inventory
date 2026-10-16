@@ -15,7 +15,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     boolean existsBySkuIgnoreCase(String sku);
 
+    Optional<Product> findByBarcodeIgnoreCase(String barcode);
+
+    boolean existsByBarcodeIgnoreCase(String barcode);
+
     boolean existsByCategoryId(Long categoryId);
+
+    long countByActiveTrue();
 
     @Query("SELECT p FROM Product p "
             + "WHERE (:active IS NULL OR p.active = :active) "

@@ -43,6 +43,26 @@ package com.stocksmart.security.authorization;
  *   <li>WAREHOUSE_STAFF — order reads; authorized receiving/fulfillment operations.</li>
  *   <li>MANAGEMENT — read-only order information.</li>
  * </ul>
+ *
+ * <p>Day 5 baseline for barcode/RFID identification and KPI visibility
+ * (enforced via {@code @PreAuthorize} on the RFID/dashboard controllers plus
+ * URL matchers in {@code SecurityConfig}):
+ *
+ * <ul>
+ *   <li>ADMIN — manage RFID tag mappings; use scanning workflows; full dashboard.</li>
+ *   <li>INVENTORY_MANAGER — use scanning workflows; read RFID data; inventory
+ *       KPIs + both order summaries; stock changes only via authorized paths.</li>
+ *   <li>WAREHOUSE_STAFF — product identification (barcode/RFID reads);
+ *       inventory KPIs + both order summaries.</li>
+ *   <li>PROCUREMENT_USER — product identification; inventory KPIs and the
+ *       purchase-order summary (no sales-fulfillment summary).</li>
+ *   <li>SALES_USER — product identification; inventory KPIs and the
+ *       sales-fulfillment summary (no purchase-order summary).</li>
+ *   <li>MANAGEMENT — read-only: barcode/RFID lookups and KPIs; cannot
+ *       process RFID reads or write tag mappings.</li>
+ * </ul>
+ * Barcode/SKU lookup itself is read-only and open to every authenticated
+ * role; it never changes stock.
  */
 public final class Roles {
 

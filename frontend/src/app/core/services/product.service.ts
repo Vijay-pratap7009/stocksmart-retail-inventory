@@ -27,6 +27,14 @@ export class ProductService {
     return this.http.get<Product>(`${this.base}/${id}`);
   }
 
+  getByBarcode(barcode: string): Observable<Product> {
+    return this.http.get<Product>(`${this.base}/barcode/${encodeURIComponent(barcode.trim())}`);
+  }
+
+  getBySku(sku: string): Observable<Product> {
+    return this.http.get<Product>(`${this.base}/sku/${encodeURIComponent(sku.trim())}`);
+  }
+
   create(request: ProductRequest): Observable<Product> {
     return this.http.post<Product>(this.base, request);
   }

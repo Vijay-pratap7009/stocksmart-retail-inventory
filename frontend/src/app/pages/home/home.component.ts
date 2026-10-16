@@ -46,6 +46,14 @@ import { environment } from '../../../environments/environment';
           <a routerLink="/sales-orders">Sales orders</a>
         </nav>
       </section>
+      <section class="card">
+        <h2>Barcode, RFID &amp; KPIs (Day 5)</h2>
+        <nav>
+          <a routerLink="/dashboard">KPI dashboard</a>
+          <a routerLink="/scan">Barcode scan</a>
+          <a routerLink="/rfid">RFID console</a>
+        </nav>
+      </section>
     </main>
   `,
   styles: [`

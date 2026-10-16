@@ -56,6 +56,18 @@ public class ProductController {
         return ResponseEntity.ok(productService.get(id));
     }
 
+    @GetMapping("/barcode/{barcode}")
+    @Operation(summary = "Identify a product by scanned/manually entered barcode (read-only, never changes stock)")
+    public ResponseEntity<ProductResponse> getByBarcode(@PathVariable String barcode) {
+        return ResponseEntity.ok(productService.getByBarcode(barcode));
+    }
+
+    @GetMapping("/sku/{sku}")
+    @Operation(summary = "Identify a product by SKU (read-only, never changes stock)")
+    public ResponseEntity<ProductResponse> getBySku(@PathVariable String sku) {
+        return ResponseEntity.ok(productService.getBySku(sku));
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER')")
     @Operation(summary = "Create a product (ADMIN, INVENTORY_MANAGER)")

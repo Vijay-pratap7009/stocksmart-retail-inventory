@@ -20,6 +20,8 @@ import com.stocksmart.repository.InventoryRepository;
 import com.stocksmart.repository.ProductRepository;
 import com.stocksmart.repository.PurchaseOrderRepository;
 import com.stocksmart.repository.PurchaseReceiptRepository;
+import com.stocksmart.repository.RfidReadEventRepository;
+import com.stocksmart.repository.RfidTagRepository;
 import com.stocksmart.repository.RoleRepository;
 import com.stocksmart.repository.SalesFulfillmentRepository;
 import com.stocksmart.repository.SalesOrderRepository;
@@ -95,6 +97,12 @@ class InventoryIntegrationTest {
     private SalesOrderRepository salesOrderRepository;
 
     @Autowired
+    private RfidTagRepository rfidTagRepository;
+
+    @Autowired
+    private RfidReadEventRepository rfidReadEventRepository;
+
+    @Autowired
     private InventoryService inventoryService;
 
     @Autowired
@@ -111,6 +119,8 @@ class InventoryIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        rfidReadEventRepository.deleteAll();
+        rfidTagRepository.deleteAll();
         purchaseReceiptRepository.deleteAll();
         salesFulfillmentRepository.deleteAll();
         purchaseOrderRepository.deleteAll();

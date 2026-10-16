@@ -1,8 +1,9 @@
-# DESIGN.md — StockSmart Data Model & API Design (Day 4 actual)
+# DESIGN.md — StockSmart Data Model & API Design (Day 5 actual)
 
 > Living design record. Day 1 = auth, Day 2 = master data, Day 3 = inventory,
-> Day 4 = purchase/sales orders with inventory integration.
-> Barcode / RFID / KPIs are explicitly out of scope — see §6.
+> Day 4 = purchase/sales orders with inventory integration,
+> Day 5 = barcode operations, RFID tag mapping + reader simulation, inventory KPI dashboard.
+> Day 6 (hardening) and Day 7 (Docker/Jenkins/forecasting) remain out of scope — see §6.
 
 ## 1. Entity-relationship overview
 
@@ -38,6 +39,20 @@ so_items 1 — N sales_fulfillment_items (which line was issued)
 Receipts write `RECEIPT` and fulfillments write `ISSUE` rows in
 `stock_transactions` sharing the receipt/fulfillment reference.
 
+Day 5 additions (see §2.9–2.10):
+
+```
+products 1 — N rfid_tags                    (EPC → product mapping; uk epc_code)
+users    1 — N rfid_tags                    (registered_by)
+rfid_tags 1 — N rfid_read_events            (nullable link: unknown EPCs log without a tag)
+products 1 — N rfid_read_events             (resolved product, nullable)
+users    1 — N rfid_read_events             (performed_by)
+```
+
+`products` also gain `barcode` (unique when present) and `minimum_stock_level`
+(§2.2). Barcode lookups and RFID reads are informational — they NEVER change
+stock; only `InventoryService`/order workflows move quantities.
+
 ## 2. Tables (Oracle system of record; H2 `local` profile mirrors via JPA)
 
 ### 2.1 `categories`
@@ -59,16 +74,21 @@ Delete rule: blocked with 409 when `products.category_id` references the row.
 |---|---|---|
 | `product_id` | NUMBER(19), `products_seq` | PK |
 | `sku` | VARCHAR2(50) | NOT NULL, UNIQUE (`uk_products_sku`); stored UPPERCASE |
+| `barcode` | VARCHAR2(60) | nullable, UNIQUE when set (`uk_products_barcode`); stored UPPERCASE; pattern `^[A-Za-z0-9.\-+/]{4,60}$` (Day 5) |
 | `product_name` | VARCHAR2(150) | NOT NULL |
 | `description` | VARCHAR2(1000) | nullable |
 | `category_id` | NUMBER(19) | NOT NULL, FK `fk_products_category` → `categories` |
 | `brand` | VARCHAR2(100) | nullable |
 | `unit` | VARCHAR2(20) | NOT NULL (e.g. PCS, KG, LTR, BOX) |
 | `cost_price` / `selling_price` | NUMBER(19,2) | NOT NULL, ≥ 0 |
+| `minimum_stock_level` | NUMBER(19,4) | nullable column (migration-safe on existing rows); app treats null as 0, never negative; drives low-stock KPI (Day 5) |
 | `active` | NUMBER(1) | NOT NULL, default true |
 | `created_at` / `updated_at` | TIMESTAMP | set by entity |
 
-No stock-quantity columns (Day 3).
+No stock-quantity columns (Day 3). Barcode duplicates → 409; blank barcode is
+stored as NULL (many products may be unscannable). Product deletes are blocked
+(409) while `inventory`, `stock_transactions`, order lines, or `rfid_tags`
+reference the row.
 
 ### 2.3 `warehouses`
 
@@ -173,6 +193,40 @@ PARTIALLY_FULFILLED → FULFILLED; CANCELLED from any open state.
 Fulfillment checks remaining quantity AND live stock, issues via the Day 3
 service (`ISSUE` type), and updates fulfilled quantities atomically.
 
+### 2.9 `rfid_tags` (Day 5)
+
+| Column | Type (Oracle) | Constraints |
+|---|---|---|
+| `tag_id` | NUMBER(19), `rfid_tags_seq` | PK |
+| `epc_code` | VARCHAR2(96) | NOT NULL, UNIQUE (`uk_rfid_tags_epc`); stored UPPERCASE; pattern `^[A-Za-z0-9.\-:]{4,96}$` |
+| `product_id` | NUMBER(19) | NOT NULL, FK `fk_rfid_tag_product` → `products` |
+| `active` | NUMBER(1) | NOT NULL, default true |
+| `registered_by_user_id` | NUMBER(19) | NOT NULL, FK `fk_rfid_tag_user` → `users` |
+| `created_at` / `updated_at` | TIMESTAMP | set by entity |
+
+One row per physical tag; a tag maps to exactly one product. Stores NO
+quantities. Deactivation (`active=false`) is preferred over deletion; product
+deletes are blocked (409) while tags reference them. Registration/remap/
+(de)activation are ADMIN-only.
+
+### 2.10 `rfid_read_events` (Day 5, append-only)
+
+| Column | Type (Oracle) | Constraints |
+|---|---|---|
+| `read_event_id` | NUMBER(19), `rfid_read_events_seq` | PK |
+| `event_reference` | VARCHAR2(60) | NOT NULL, UNIQUE (`uk_rfid_read_reference`); client idempotency key or generated `RFD-xxxxxxxx` — replay → 409 |
+| `epc_code` | VARCHAR2(96) | NOT NULL; raw scanned EPC, kept even when unknown |
+| `tag_id` | NUMBER(19) | nullable, FK `fk_rfid_read_tag` (null = unknown EPC) |
+| `product_id` | NUMBER(19) | nullable, FK `fk_rfid_read_product` (resolved via tag) |
+| `status` | VARCHAR2(30) | NOT NULL, `RESOLVED` / `INACTIVE_TAG` / `UNKNOWN_TAG` |
+| `reader_name` | VARCHAR2(60) | nullable (simulator or hardware bridge name) |
+| `simulated` | NUMBER(1) | NOT NULL; server-controlled — a simulated read can never be labeled hardware |
+| `event_at` | TIMESTAMP | when the read happened (client-supplied or now) |
+| `received_at` | TIMESTAMP | server receipt time, immutable |
+| `performed_by_user_id` | NUMBER(19) | NOT NULL, FK → `users` |
+
+No update/delete API. Processing a read NEVER changes stock — stock moves only
+through `InventoryService` and the order workflows.
 
 ## 3. Conventions
 
@@ -199,19 +253,25 @@ service (`ISSUE` type), and updates fulfilled quantities atomically.
   order rows are locked (`lockById`) so concurrent receipts/fulfillments on
   one order serialize. Receipt/fulfillment references are unique idempotency
   keys — replays are rejected, never double-applied.
+- Identification (Day 5): barcodes and EPCs normalized to UPPERCASE + trimmed;
+  blank barcode → NULL. Reads are append-only and idempotent via unique
+  `event_reference` (replay → 409). `simulated` is server-controlled. Neither
+  barcode nor RFID paths touch inventory — they only resolve products/log events.
 
 ## 4. REST API (`/api/v1/...`, paged `Page<DTO>`, `size=20` default)
 
 | Group | Operations | Query params |
 |---|---|---|
 | `/categories` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (name/code), `active`, `page/size/sort` |
-| `/products` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (sku/name), `active`, `categoryId`, `page/size/sort` |
+| `/products` | GET (page), GET /{id}, GET /barcode/{barcode}, GET /sku/{sku}, POST 201, PUT /{id}, DELETE 204 | `search` (sku/name), `active`, `categoryId`, `page/size/sort` |
 | `/warehouses` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (code/name/city), `active`, `page/size/sort` |
 | `/suppliers` | GET (page), GET /{id}, POST 201, PUT /{id}, DELETE 204 | `search` (code/name/contact/email/phone), `active`, `page/size/sort` |
 | `/inventory` | GET (page), GET /{id}, GET /product/{id}, GET /warehouse/{id}, POST /receipts 201, POST /adjustments 201, POST /transfers 201 | `search` (sku/name), `productId`, `warehouseId`, `page/size/sort` |
 | `/stock-transactions` | GET (page, newest first), GET /{id} | `productId`, `warehouseId`, `type`, `reference`, `from`, `to` (ISO-8601), `page/size/sort` |
 | `/purchase-orders` | GET (page), GET /{id}, GET /{id}/receipts, POST 201, PUT /{id} (draft), POST /{id}/submit, POST /{id}/receipts 201, POST /{id}/cancel | `search` (poNumber), `status`, `supplierId`, `page/size/sort` |
 | `/sales-orders` | GET (page), GET /{id}, GET /{id}/fulfillments, POST 201, PUT /{id} (draft), POST /{id}/confirm, POST /{id}/fulfillments 201, POST /{id}/cancel | `search` (soNumber/customer), `status`, `warehouseId`, `page/size/sort` |
+| `/rfid` (Day 5) | GET /tags (page), GET /tags/{epcCode}, POST /tags 201 (ADMIN), PUT /tags/{epcCode} (ADMIN), GET /reader, POST /reads 201, GET /reads (page) | `/tags`: `search` (epc/sku/name), `active`, `productId`, `page/size/sort`; `/reads`: `epcCode`, `status`, `simulated`, `from`, `to`, `page/size/sort` (default `receivedAt,desc`) |
+| `/dashboard` (Day 5) | GET /summary, GET /low-stock (page), GET /stockouts (page), GET /purchase-orders, GET /sales-fulfillment, GET /recent-transactions | `warehouseId` (validated; unknown → 404) on all but recent; `/recent-transactions`: `productId`, `warehouseId`, `limit` (1–50, default 10); lists: `page/size/sort` |
 
 ## 5. RBAC baseline (filter-level matchers + `@PreAuthorize`, backend is the boundary)
 
@@ -248,9 +308,44 @@ Day 4 order baseline (filter-level matchers + `@PreAuthorize`):
 | WAREHOUSE_STAFF | R | — | W | R | — | W |
 | MANAGEMENT | R | — | — | R | — | — |
 
+Day 5 barcode/RFID baseline (filter-level matchers + `@PreAuthorize`):
+
+| Role | Barcode/SKU lookup | RFID reads (tags/reader/events) | RFID tag writes | RFID read processing |
+|---|---|---|---|---|
+| ADMIN | R | R | W | W |
+| INVENTORY_MANAGER | R | R | — | W |
+| WAREHOUSE_STAFF | R | R | — | W |
+| PROCUREMENT_USER | R | R | — | W |
+| SALES_USER | R | R | — | W |
+| MANAGEMENT | R | R | — | — |
+
+Day 5 dashboard baseline: `/summary`, `/low-stock`, `/stockouts`,
+`/recent-transactions` = any authenticated role. `/purchase-orders` excludes
+SALES_USER (mirrors Day 4 PO reads); `/sales-fulfillment` excludes
+PROCUREMENT_USER (mirrors Day 4 SO reads). Frontend hides a card a role cannot
+read, but the backend 403 is the boundary.
+
+KPI definitions (computed from persisted rows, no caching, no fake data):
+- Low stock: `0 < quantity_on_hand < COALESCE(minimum_stock_level, 0)` per
+  product-warehouse row; `deficit = minimum − on_hand`. Exactly-at-minimum is
+  NOT low; zero is a stockout.
+- Stockout: `quantity_on_hand = 0` (the row exists and is reported).
+- `inventoryValue = SUM(quantity_on_hand × product.cost_price)`, scale 2
+  HALF_UP — an operational cost-basis estimate, not an accounting valuation.
+- Pending purchase orders = `SUBMITTED + PARTIALLY_RECEIVED`; pending sales
+  orders = `CONFIRMED + PARTIALLY_FULFILLED`; remaining-to-fulfill units =
+  `SUM(ordered − fulfilled)` over those orders' lines (each line once).
+
 ## 6. Deferred (do not build until its phase)
 
-- Day 5: barcode/RFID/KPI/reporting. Day 6: hardening. Day 7: Docker/Jenkins runs.
+- Day 6: hardening. Day 7: Docker/Jenkins runs. No forecasting/ML, no
+  reporting module beyond the Day 5 KPI dashboard.
+- RFID is **tag mapping + simulator only** (`RfidReader` abstraction,
+  `SimulatedRfidReader`): no physical reader hardware is integrated; the
+  interface is the extension point for a real bridge (read-only integration —
+  reads still never change stock).
+- Dashboard is a live query view (no materialized aggregates); acceptable at
+  current data volumes, revisit with snapshots if needed.
 - Supplier delete guard still open (purchase orders reference suppliers —
   revisit when deletion of suppliers with orders must be blocked; currently the
   FK constraint is the backstop).

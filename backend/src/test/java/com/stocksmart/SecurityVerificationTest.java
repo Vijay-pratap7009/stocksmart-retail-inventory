@@ -11,6 +11,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stocksmart.entity.Role;
 import com.stocksmart.entity.RoleName;
 import com.stocksmart.entity.User;
+import com.stocksmart.repository.RfidReadEventRepository;
+import com.stocksmart.repository.RfidTagRepository;
 import com.stocksmart.repository.RoleRepository;
 import com.stocksmart.repository.UserRepository;
 import io.jsonwebtoken.Jwts;
@@ -46,6 +48,12 @@ class SecurityVerificationTest {
     private RoleRepository roleRepository;
 
     @Autowired
+    private RfidTagRepository rfidTagRepository;
+
+    @Autowired
+    private RfidReadEventRepository rfidReadEventRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Value("${security.jwt.secret}")
@@ -55,6 +63,8 @@ class SecurityVerificationTest {
 
     @BeforeEach
     void setUp() {
+        rfidReadEventRepository.deleteAll();
+        rfidTagRepository.deleteAll();
         userRepository.deleteAll();
         roleRepository.deleteAll();
         Role adminRole = roleRepository.save(new Role(RoleName.ADMIN, "admin"));

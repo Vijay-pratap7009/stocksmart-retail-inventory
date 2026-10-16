@@ -12,6 +12,7 @@ public class ProductMapper {
         return new ProductResponse(
                 product.getId(),
                 product.getSku(),
+                product.getBarcode(),
                 product.getName(),
                 product.getDescription(),
                 product.getCategory() != null ? product.getCategory().getId() : null,
@@ -21,6 +22,7 @@ public class ProductMapper {
                 product.getUnit(),
                 product.getCostPrice(),
                 product.getSellingPrice(),
+                product.getEffectiveMinimumStockLevel(),
                 product.isActive(),
                 product.getCreatedAt(),
                 product.getUpdatedAt());

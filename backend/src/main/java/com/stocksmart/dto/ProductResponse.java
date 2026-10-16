@@ -8,6 +8,7 @@ public class ProductResponse {
 
     private Long id;
     private String sku;
+    private String barcode;
     private String name;
     private String description;
     private Long categoryId;
@@ -17,6 +18,7 @@ public class ProductResponse {
     private String unit;
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;
+    private BigDecimal minimumStockLevel;
     private boolean active;
     private Instant createdAt;
     private Instant updatedAt;
@@ -24,13 +26,14 @@ public class ProductResponse {
     public ProductResponse() {
     }
 
-    public ProductResponse(Long id, String sku, String name, String description,
+    public ProductResponse(Long id, String sku, String barcode, String name, String description,
                            Long categoryId, String categoryName, String categoryCode,
                            String brand, String unit, BigDecimal costPrice,
-                           BigDecimal sellingPrice, boolean active,
+                           BigDecimal sellingPrice, BigDecimal minimumStockLevel, boolean active,
                            Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.sku = sku;
+        this.barcode = barcode;
         this.name = name;
         this.description = description;
         this.categoryId = categoryId;
@@ -40,6 +43,7 @@ public class ProductResponse {
         this.unit = unit;
         this.costPrice = costPrice;
         this.sellingPrice = sellingPrice;
+        this.minimumStockLevel = minimumStockLevel;
         this.active = active;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -51,6 +55,10 @@ public class ProductResponse {
 
     public String getSku() {
         return sku;
+    }
+
+    public String getBarcode() {
+        return barcode;
     }
 
     public String getName() {
@@ -87,6 +95,10 @@ public class ProductResponse {
 
     public BigDecimal getSellingPrice() {
         return sellingPrice;
+    }
+
+    public BigDecimal getMinimumStockLevel() {
+        return minimumStockLevel;
     }
 
     public boolean isActive() {
