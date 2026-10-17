@@ -60,7 +60,7 @@ Day 6 = hardening & release verification (DONE — see §3f, §6f).
 - Frontend: `core/models/master-data.models`, 4 services, 4 guarded list+form
   pages (`/categories|products|warehouses|suppliers`), Home nav. Product form loads
   categories from the API. `ng build` ✅.
-- Tests: `MasterDataIntegrationTest` (8 tests). Docs: `design.md` (new), README §10–11.
+- Tests: `MasterDataIntegrationTest` (8 tests). Docs: `design.md` (new), README (master-data docs).
 
 ## 3c. What Day 3 built (all verified — see §6c)
 
@@ -80,7 +80,7 @@ Day 6 = hardening & release verification (DONE — see §3f, §6f).
   `StockTransactionService`, 4 guarded pages (`/inventory`, `/inventory/operations`,
   `/inventory/transfers`, `/inventory/history`), Home nav. `ng build` ✅.
 - Tests: `InventoryIntegrationTest` (12 tests incl. 20-thread concurrency).
-  Docs: `design.md` §2.5–2.6 + inventory RBAC, README §11–12.
+  Docs: `design.md` §2.5–2.6 + inventory RBAC, README (inventory docs).
 
 ## 3d. What Day 4 built (all verified — see §6d)
 
@@ -102,7 +102,7 @@ Day 6 = hardening & release verification (DONE — see §3f, §6f).
   fulfillment forms, histories; routes + Home nav. `ng build` ✅.
 - Tests: `OrderIntegrationTest` (8 tests). Day 2/3 test setUps now wipe order
   tables first (FK-safe regardless of execution order). Docs: `design.md`
-  §2.7–2.8 + order RBAC, README §12–13.
+  §2.7–2.8 + order RBAC, README (orders docs).
 
 ## 3e. What Day 5 built (all verified — see §6e)
 
@@ -145,7 +145,7 @@ Day 6 = hardening & release verification (DONE — see §3f, §6f).
 - Tests: `BarcodeRfidIntegrationTest` (15) + `DashboardIntegrationTest` (12);
   Day 1–4 test set-ups now wipe `rfid_read_events` then `rfid_tags` first
   (RFID FKs → products/users). Docs: `design.md` §2.9–2.10 + Day 5 API/RBAC/KPI,
-  README §13–14.
+  README (barcode/RFID/KPI docs).
 
 ## 3f. What Day 6 built (all verified — see §6f)
 
@@ -203,7 +203,8 @@ Day 6 = hardening & release verification (DONE — see §3f, §6f).
   data, receipt→transfer→adjustment ledger math, barcode lookup, RFID register/
   resolve/duplicate-409/no-stock-change, PO receive, SO fulfill + insufficient-409,
   dashboard-vs-ledger, optional SPA deep-link when the target serves HTML.
-- **Docs:** README §15 (deployment, persistence, troubleshooting), design.md §7
+- **Docs:** README (overview, quick start, configuration, deployment,
+  troubleshooting), design.md §7
   (deployment architecture), this file.
 
 ## 4. Run commands
