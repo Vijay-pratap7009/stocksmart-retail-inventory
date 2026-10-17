@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * SALES_ORDERS — sales header (Day 4).
@@ -32,6 +33,7 @@ import java.util.List;
  * no CRM. Confirming does NOT reserve stock — availability is enforced at
  * fulfillment time through the Day 3 inventory service.
  */
+@BatchSize(size = 50)
 @Entity
 @Table(
         name = "sales_orders",
@@ -93,6 +95,7 @@ public class SalesOrder {
     private User createdBy;
 
     @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     private List<SalesOrderItem> items = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)

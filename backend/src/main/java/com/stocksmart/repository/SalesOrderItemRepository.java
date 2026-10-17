@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
 /** Persistence for {@link SalesOrderItem} lines (read-side aggregations for Day 5 KPIs). */
 public interface SalesOrderItemRepository extends JpaRepository<SalesOrderItem, Long> {
 
+    boolean existsByProductId(Long productId);
+
     /**
      * Day 5 KPI aggregation: total remaining quantity to fulfill across items
      * of orders in the given statuses ({@code ordered - fulfilled} per line).

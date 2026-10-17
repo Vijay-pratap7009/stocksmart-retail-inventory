@@ -20,6 +20,7 @@ import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * PURCHASE_RECEIPTS — durable record of one goods-receipt operation (Day 4).
@@ -78,6 +79,7 @@ public class PurchaseReceipt {
     private String notes;
 
     @OneToMany(mappedBy = "receipt", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     private List<PurchaseReceiptItem> lines = new ArrayList<>();
 
     protected PurchaseReceipt() {

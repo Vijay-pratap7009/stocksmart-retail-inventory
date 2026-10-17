@@ -23,6 +23,10 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
 
     boolean existsByPoNumberIgnoreCase(String poNumber);
 
+    boolean existsBySupplierId(Long supplierId);
+
+    boolean existsByWarehouseId(Long warehouseId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM PurchaseOrder o WHERE o.id = :id")
     Optional<PurchaseOrder> lockById(@Param("id") Long id);

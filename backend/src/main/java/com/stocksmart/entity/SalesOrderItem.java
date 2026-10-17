@@ -17,11 +17,13 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * SO_ITEMS — one requested product line. {@code unitPrice} is the selling price
  * captured at order time; later product price changes never rewrite it.
  */
+@BatchSize(size = 50)
 @Entity
 @Table(name = "so_items")
 public class SalesOrderItem {

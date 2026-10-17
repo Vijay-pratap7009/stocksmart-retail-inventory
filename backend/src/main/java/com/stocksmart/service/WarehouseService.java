@@ -7,6 +7,8 @@ import com.stocksmart.exception.ConflictException;
 import com.stocksmart.exception.ResourceNotFoundException;
 import com.stocksmart.mapper.WarehouseMapper;
 import com.stocksmart.repository.InventoryRepository;
+import com.stocksmart.repository.PurchaseOrderRepository;
+import com.stocksmart.repository.SalesOrderRepository;
 import com.stocksmart.repository.WarehouseRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,22 +16,28 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Warehouse master-data workflow (Day 2).
- * Standalone master table — no inventory relationships exist yet (Day 3),
- * so deletion only guards the record's own existence.
+ * Warehouse master-data workflow (Day 2). Deletion is guarded: warehouses
+ * referenced by inventory balances (Day 3) or by purchase/sales orders (Day 4)
+ * cannot be removed; deactivate them instead so history stays intact.
  */
 @Service
 public class WarehouseService {
 
     private final WarehouseRepository warehouseRepository;
     private final InventoryRepository inventoryRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
+    private final SalesOrderRepository salesOrderRepository;
     private final WarehouseMapper warehouseMapper;
 
     public WarehouseService(WarehouseRepository warehouseRepository,
                             InventoryRepository inventoryRepository,
+                            PurchaseOrderRepository purchaseOrderRepository,
+                            SalesOrderRepository salesOrderRepository,
                             WarehouseMapper warehouseMapper) {
         this.warehouseRepository = warehouseRepository;
         this.inventoryRepository = inventoryRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
+        this.salesOrderRepository = salesOrderRepository;
         this.warehouseMapper = warehouseMapper;
     }
 
@@ -94,6 +102,16 @@ public class WarehouseService {
         if (inventoryRepository.existsByWarehouseId(id)) {
             throw new ConflictException(
                     "Warehouse '" + warehouse.getCode() + "' cannot be deleted because inventory records reference it");
+        }
+        if (purchaseOrderRepository.existsByWarehouseId(id)) {
+            throw new ConflictException("Warehouse '" + warehouse.getCode()
+                    + "' cannot be deleted because purchase orders reference it"
+                    + " (deactivate it instead)");
+        }
+        if (salesOrderRepository.existsByWarehouseId(id)) {
+            throw new ConflictException("Warehouse '" + warehouse.getCode()
+                    + "' cannot be deleted because sales orders reference it"
+                    + " (deactivate it instead)");
         }
         warehouseRepository.delete(warehouse);
     }

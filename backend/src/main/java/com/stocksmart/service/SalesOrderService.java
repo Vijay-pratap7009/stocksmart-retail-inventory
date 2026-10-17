@@ -21,7 +21,9 @@ import com.stocksmart.repository.SalesOrderRepository;
 import com.stocksmart.repository.UserRepository;
 import com.stocksmart.repository.WarehouseRepository;
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -173,7 +175,14 @@ public class SalesOrderService {
         String notes = blankToNull(request.getNotes());
 
         // Validate every line before issuing any stock.
+        // An SO line may appear at most once per fulfillment: repeated entries
+        // would each pass the remaining-quantity check and over-fulfill the order.
+        Set<Long> seenLines = new HashSet<>();
         for (var line : request.getLines()) {
+            if (!seenLines.add(line.getSoItemId())) {
+                throw new IllegalArgumentException(
+                        "Duplicate SO line " + line.getSoItemId() + " in one fulfillment");
+            }
             SalesOrderItem item = order.getItems().stream()
                     .filter(i -> i.getId().equals(line.getSoItemId()))
                     .findFirst()

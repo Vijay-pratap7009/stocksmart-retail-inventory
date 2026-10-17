@@ -14,6 +14,8 @@ public interface StockTransactionRepository extends JpaRepository<StockTransacti
 
     long countByReferenceNumber(String referenceNumber);
 
+    boolean existsByProductId(Long productId);
+
     @Query("SELECT t FROM StockTransaction t "
             + "WHERE (:productId IS NULL OR t.product.id = :productId) "
             + "AND (:warehouseId IS NULL OR t.warehouse.id = :warehouseId) "

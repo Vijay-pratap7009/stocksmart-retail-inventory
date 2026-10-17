@@ -20,6 +20,7 @@ import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * SALES_FULFILLMENTS — durable record of one fulfillment operation (Day 4).
@@ -79,6 +80,7 @@ public class SalesFulfillment {
     private String notes;
 
     @OneToMany(mappedBy = "fulfillment", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     private List<SalesFulfillmentItem> lines = new ArrayList<>();
 
     protected SalesFulfillment() {

@@ -10,7 +10,10 @@ import com.stocksmart.mapper.ProductMapper;
 import com.stocksmart.repository.CategoryRepository;
 import com.stocksmart.repository.InventoryRepository;
 import com.stocksmart.repository.ProductRepository;
+import com.stocksmart.repository.PurchaseOrderItemRepository;
 import com.stocksmart.repository.RfidTagRepository;
+import com.stocksmart.repository.SalesOrderItemRepository;
+import com.stocksmart.repository.StockTransactionRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -20,7 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Product master-data workflow (Day 2, extended Day 5).
  * Every product references a valid category; SKU is unique; optional barcode
  * is unique when present; prices and the minimum stock level are validated
- * by Bean Validation before reaching this layer.
+ * by Bean Validation before reaching this layer. Deletion is guarded against
+ * every referencing record (inventory, RFID tags, order lines, movements).
  */
 @Service
 public class ProductService {
@@ -29,17 +33,26 @@ public class ProductService {
     private final CategoryRepository categoryRepository;
     private final InventoryRepository inventoryRepository;
     private final RfidTagRepository rfidTagRepository;
+    private final PurchaseOrderItemRepository purchaseOrderItemRepository;
+    private final SalesOrderItemRepository salesOrderItemRepository;
+    private final StockTransactionRepository stockTransactionRepository;
     private final ProductMapper productMapper;
 
     public ProductService(ProductRepository productRepository,
                           CategoryRepository categoryRepository,
                           InventoryRepository inventoryRepository,
                           RfidTagRepository rfidTagRepository,
+                          PurchaseOrderItemRepository purchaseOrderItemRepository,
+                          SalesOrderItemRepository salesOrderItemRepository,
+                          StockTransactionRepository stockTransactionRepository,
                           ProductMapper productMapper) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.inventoryRepository = inventoryRepository;
         this.rfidTagRepository = rfidTagRepository;
+        this.purchaseOrderItemRepository = purchaseOrderItemRepository;
+        this.salesOrderItemRepository = salesOrderItemRepository;
+        this.stockTransactionRepository = stockTransactionRepository;
         this.productMapper = productMapper;
     }
 
@@ -148,6 +161,21 @@ public class ProductService {
         if (rfidTagRepository.existsByProductId(id)) {
             throw new ConflictException(
                     "Product '" + product.getSku() + "' cannot be deleted because RFID tags reference it");
+        }
+        if (purchaseOrderItemRepository.existsByProductId(id)) {
+            throw new ConflictException("Product '" + product.getSku()
+                    + "' cannot be deleted because purchase order lines reference it"
+                    + " (deactivate it instead)");
+        }
+        if (salesOrderItemRepository.existsByProductId(id)) {
+            throw new ConflictException("Product '" + product.getSku()
+                    + "' cannot be deleted because sales order lines reference it"
+                    + " (deactivate it instead)");
+        }
+        if (stockTransactionRepository.existsByProductId(id)) {
+            throw new ConflictException("Product '" + product.getSku()
+                    + "' cannot be deleted because stock movements reference it"
+                    + " (deactivate it instead)");
         }
         productRepository.delete(product);
     }

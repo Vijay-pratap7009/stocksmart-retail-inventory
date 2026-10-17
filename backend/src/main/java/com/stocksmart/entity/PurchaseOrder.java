@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * PURCHASE_ORDERS — procurement header (Day 4).
@@ -32,6 +33,7 @@ import java.util.List;
  * Goods receipt flows through {@code PurchaseOrderService} into the Day 3
  * inventory service — never by direct table writes.
  */
+@BatchSize(size = 50)
 @Entity
 @Table(
         name = "purchase_orders",
@@ -99,6 +101,7 @@ public class PurchaseOrder {
     private User createdBy;
 
     @OneToMany(mappedBy = "purchaseOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     private List<PurchaseOrderItem> items = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)

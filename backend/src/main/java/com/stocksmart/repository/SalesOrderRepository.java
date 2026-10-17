@@ -23,6 +23,8 @@ public interface SalesOrderRepository extends JpaRepository<SalesOrder, Long> {
 
     boolean existsBySoNumberIgnoreCase(String soNumber);
 
+    boolean existsByWarehouseId(Long warehouseId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM SalesOrder o WHERE o.id = :id")
     Optional<SalesOrder> lockById(@Param("id") Long id);

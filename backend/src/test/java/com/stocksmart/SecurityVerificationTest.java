@@ -18,7 +18,10 @@ import com.stocksmart.repository.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Date;
+import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -159,6 +162,40 @@ class SecurityVerificationTest {
                         .header("Authorization", "Bearer " + expired))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    void jwtSignatureAndClaimTamperingAreRejected() throws Exception {
+        // Format-valid token signed with an attacker-controlled key → signature
+        // verification fails → 401 (no claim inside it is trusted).
+        SecretKey attackerKey = Jwts.SIG.HS256.key().build();
+        String forged = Jwts.builder()
+                .subject("admin")
+                .claim("uid", 1L)
+                .claim("role", "ADMIN")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith(attackerKey)
+                .compact();
+        mockMvc.perform(get("/api/v1/test/admin")
+                        .header("Authorization", "Bearer " + forged))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("Authentication required"));
+
+        // Payload tampered after issuance (role escalation attempt) → the
+        // signature no longer matches → 401.
+        String legit = login("manager");
+        String[] parts = legit.split("\\.");
+        String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8)
+                .replace("\"MANAGEMENT\"", "\"ADMIN\"");
+        String tampered = parts[0] + "."
+                + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(payload.getBytes(StandardCharsets.UTF_8))
+                + "." + parts[2];
+        mockMvc.perform(get("/api/v1/test/admin")
+                        .header("Authorization", "Bearer " + tampered))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

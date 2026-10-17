@@ -16,8 +16,10 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.hibernate.annotations.BatchSize;
 
 /** One received line within a {@link PurchaseReceipt}, tied to its PO line. */
+@BatchSize(size = 50)
 @Entity
 @Table(name = "purchase_receipt_items")
 public class PurchaseReceiptItem {

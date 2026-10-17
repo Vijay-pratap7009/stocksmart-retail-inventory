@@ -23,7 +23,9 @@ import com.stocksmart.repository.SupplierRepository;
 import com.stocksmart.repository.UserRepository;
 import com.stocksmart.repository.WarehouseRepository;
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -178,7 +180,14 @@ public class PurchaseOrderService {
         String notes = blankToNull(request.getNotes());
 
         // Validate every line before touching stock or quantities.
+        // A PO line may appear at most once per receipt: repeated entries would
+        // each pass the remaining-quantity check and over-receive the order.
+        Set<Long> seenLines = new HashSet<>();
         for (var line : request.getLines()) {
+            if (!seenLines.add(line.getPoItemId())) {
+                throw new IllegalArgumentException(
+                        "Duplicate PO line " + line.getPoItemId() + " in one receipt");
+            }
             PurchaseOrderItem item = order.getItems().stream()
                     .filter(i -> i.getId().equals(line.getPoItemId()))
                     .findFirst()

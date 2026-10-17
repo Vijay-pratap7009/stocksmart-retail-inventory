@@ -15,9 +15,14 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Centralized error rendering. Consistent JSON shape, no stack traces leak.
@@ -74,6 +79,48 @@ public class GlobalExceptionHandler {
         log.info("Malformed request body on {}", request.getRequestURI());
         return body(HttpStatus.BAD_REQUEST, "Bad Request",
                 "Malformed JSON request body", request);
+    }
+
+    /**
+     * Path variables / query parameters that cannot be converted to their
+     * declared type (e.g. {@code /products/abc}, {@code ?type=BOGUS},
+     * {@code ?from=notadate}) are client errors, not 500s.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        log.info("Invalid parameter on {}: {}", request.getRequestURI(), ex.getMessage());
+        return body(HttpStatus.BAD_REQUEST, "Bad Request",
+                "Invalid value for parameter '" + ex.getName() + "'", request);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParameter(
+            MissingServletRequestParameterException ex, HttpServletRequest request) {
+        return body(HttpStatus.BAD_REQUEST, "Bad Request",
+                "Missing required parameter '" + ex.getParameterName() + "'", request);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        return body(HttpStatus.METHOD_NOT_ALLOWED, "Method Not Allowed",
+                "HTTP method " + ex.getMethod() + " is not supported for this endpoint", request);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMediaTypeNotSupported(
+            HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
+        return body(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported Media Type",
+                "Content type is not supported; use application/json", request);
+    }
+
+    /** Unmapped URLs must read as 404, not fall through to the 500 handler. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResource(
+            NoResourceFoundException ex, HttpServletRequest request) {
+        return body(HttpStatus.NOT_FOUND, "Not Found",
+                "No endpoint found for this request", request);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

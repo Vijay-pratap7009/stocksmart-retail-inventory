@@ -16,8 +16,10 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.hibernate.annotations.BatchSize;
 
 /** One issued line within a {@link SalesFulfillment}, tied to its SO line. */
+@BatchSize(size = 50)
 @Entity
 @Table(name = "sales_fulfillment_items")
 public class SalesFulfillmentItem {

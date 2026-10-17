@@ -6,6 +6,7 @@ import com.stocksmart.entity.Supplier;
 import com.stocksmart.exception.ConflictException;
 import com.stocksmart.exception.ResourceNotFoundException;
 import com.stocksmart.mapper.SupplierMapper;
+import com.stocksmart.repository.PurchaseOrderRepository;
 import com.stocksmart.repository.SupplierRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,18 +15,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Supplier master-data workflow (Day 2).
- * Standalone master table — purchase-order relations arrive Day 4,
- * so deletion only guards the record's own existence.
+ * Deletion is guarded: suppliers referenced by purchase orders (Day 4)
+ * cannot be removed; deactivate them instead so order history stays intact.
  */
 @Service
 public class SupplierService {
 
     private final SupplierRepository supplierRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
     private final SupplierMapper supplierMapper;
 
     public SupplierService(SupplierRepository supplierRepository,
+                           PurchaseOrderRepository purchaseOrderRepository,
                            SupplierMapper supplierMapper) {
         this.supplierRepository = supplierRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
         this.supplierMapper = supplierMapper;
     }
 
@@ -86,9 +90,13 @@ public class SupplierService {
 
     @Transactional
     public void delete(Long id) {
-        // Day 4 purchase-order relations do not exist yet — direct delete is safe.
-        // Revisit when purchase orders land.
-        supplierRepository.delete(requireById(id));
+        Supplier supplier = requireById(id);
+        if (purchaseOrderRepository.existsBySupplierId(id)) {
+            throw new ConflictException("Supplier '" + supplier.getCode()
+                    + "' cannot be deleted because purchase orders reference it"
+                    + " (deactivate it instead)");
+        }
+        supplierRepository.delete(supplier);
     }
 
     private Supplier requireById(Long id) {
