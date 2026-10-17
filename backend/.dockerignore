@@ -1,5 +1,13 @@
 target/
 .git/
 .gitignore
+.env
+*.env
+*.log
+logs/
+.idea/
+.vscode/
+*.iml
 Dockerfile
+.dockerignore
 *.md

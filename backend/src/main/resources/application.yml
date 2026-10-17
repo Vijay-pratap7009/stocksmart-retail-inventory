@@ -5,10 +5,15 @@
 # =============================================================================
 server:
   port: 8080
+  # Container-friendly shutdown: SIGTERM drains in-flight requests instead of
+  # dropping them (compose stop / rolling restarts).
+  shutdown: graceful
 
 spring:
   application:
     name: stocksmart
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   datasource:
     # Oracle thin URL assembled from env vars (defaults = local Oracle XE)
     url: jdbc:oracle:thin:@${DB_HOST:localhost}:${DB_PORT:1521}/${DB_SERVICE:XEPDB1}

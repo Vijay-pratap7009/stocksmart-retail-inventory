@@ -1,6 +1,16 @@
 node_modules/
 dist/
+.angular/
+coverage/
+e2e/
 .git/
 .gitignore
-proxy.conf.json
+.env
+*.env
+*.log
+.idea/
+.vscode/
+*.iml
+Dockerfile
+.dockerignore
 *.md

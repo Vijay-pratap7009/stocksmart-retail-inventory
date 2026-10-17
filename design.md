@@ -1,9 +1,10 @@
-# DESIGN.md — StockSmart Data Model & API Design (Day 5 actual)
+# DESIGN.md — StockSmart Data Model & API Design (Day 6 actual)
 
 > Living design record. Day 1 = auth, Day 2 = master data, Day 3 = inventory,
 > Day 4 = purchase/sales orders with inventory integration,
-> Day 5 = barcode operations, RFID tag mapping + reader simulation, inventory KPI dashboard.
-> Day 6 (hardening) and Day 7 (Docker/Jenkins/forecasting) remain out of scope — see §6.
+> Day 5 = barcode operations, RFID tag mapping + reader simulation, inventory KPI dashboard,
+> Day 6 = hardening & release verification (see §6 for limits that remain).
+> Day 7 (Docker/Jenkins) remains out of scope.
 
 ## 1. Entity-relationship overview
 
@@ -336,16 +337,85 @@ KPI definitions (computed from persisted rows, no caching, no fake data):
   orders = `CONFIRMED + PARTIALLY_FULFILLED`; remaining-to-fulfill units =
   `SUM(ordered − fulfilled)` over those orders' lines (each line once).
 
-## 6. Deferred (do not build until its phase)
+## 6. Deferred / known limits
 
-- Day 6: hardening. Day 7: Docker/Jenkins runs. No forecasting/ML, no
-  reporting module beyond the Day 5 KPI dashboard.
+- Days 1–7 are complete. Day 6 (hardening) added duplicate-line guards on
+  receipts/fulfillments, order-line + stock-history-aware delete guards,
+  client-error status mapping (400/404/405/415), JWT signature/claim-tampering
+  regressions, the JWT dev-secret startup warning, auth-interceptor
+  session-expiry handling, and `@BatchSize` N+1 mitigation. Day 7 adds the
+  container deployment (§7) — no forecasting/ML, no reporting module beyond the
+  Day 5 KPI dashboard.
 - RFID is **tag mapping + simulator only** (`RfidReader` abstraction,
   `SimulatedRfidReader`): no physical reader hardware is integrated; the
   interface is the extension point for a real bridge (read-only integration —
   reads still never change stock).
 - Dashboard is a live query view (no materialized aggregates); acceptable at
   current data volumes, revisit with snapshots if needed.
-- Supplier delete guard still open (purchase orders reference suppliers —
-  revisit when deletion of suppliers with orders must be blocked; currently the
-  FK constraint is the backstop).
+- JWT is stateless: user deactivation/deletion does not revoke already-issued
+  tokens before expiry (24h default). A deny-list or shorter TTL would be the
+  path if revocation becomes a requirement.
+- Oracle runtime verification is blocked in the current environment (no
+  Docker/Oracle): automated suites run on H2; Oracle is the primary
+  config/driver/dialect and the schema is JPA-managed. The compose stack was
+  validated at the configuration level only (§7.6).
+
+## 7. Deployment architecture (Day 7)
+
+### 7.1 Topology
+
+```text
+host :4200 ─► frontend (nginx:1.27-alpine, non-root base image)
+                · serves the Angular prod bundle (dist/frontend/browser)
+                · /api/* ──proxy──► http://backend:8080 (BACKEND_URL, envsubst)
+                · SPA fallback: non-file routes → /index.html
+host :8080 ─► backend (eclipse-temurin:17-jre, user stocksmart uid 1001)
+                · Spring Boot jar; /api/v1/health is the container healthcheck
+                · SIGTERM → graceful shutdown (server.shutdown=graceful, 30 s)
+host :1521 ─► oracle (gvenzl/oracle-xe:21-slim-faststart; arm64: oracle-free:23)
+                · healthcheck.sh <PDB> gates backend start (service_healthy)
+                · data in named volume `oracle-data`
+             all three on user-defined bridge network `stocksmart-net`
+```
+
+### 7.2 Frontend routing and origins
+
+- Production Angular uses `environment.prod.ts` (`apiUrl: ''`) via the
+  `fileReplacements` entry in `angular.json` — the browser only ever calls
+  same-origin `/api/...`, so there is no CORS dependency and no internal
+  hostname leakage into the bundle.
+- nginx resolves the upstream via `${BACKEND_URL}` in
+  `frontend/nginx/default.conf.template` (rendered by the image's envsubst
+  entrypoint), so the API location is configurable per environment.
+
+### 7.3 Configuration & secrets
+
+- `docker-compose.yml` requires `DB_PASSWORD` and `JWT_SECRET` (`:?` fail-fast);
+  `.env` is git-ignored, `.env.example` holds placeholders. There are no weak
+  defaults in the compose file, and the backend additionally warns at startup if
+  the built-in dev JWT secret is in use.
+- The seed user/password remain dev conveniences (`APP_SEED_ENABLED`).
+
+### 7.4 Startup ordering & lifecycle
+
+- Health-based `depends_on` chain: oracle (PDB OPEN READ WRITE) → backend
+  (`/api/v1/health`) → frontend. No fixed sleeps anywhere.
+- Both images define `HEALTHCHECK`s; graceful shutdown is enabled so container
+  stop drains in-flight requests.
+
+### 7.5 ARM64 / persistence caveats
+
+- Oracle XE 21c is amd64-only; `docker-compose.arm64.yml` swaps to Oracle
+  Database Free 23c (`FREEPDB1`). The two images are not volume-compatible —
+  use a fresh volume (destructive `down -v`) or an external Oracle.
+- `ddl-auto: update` is additive for existing databases; the schema is
+  JPA-managed on first start.
+
+### 7.6 Verification status (honest split)
+
+- Config-level (verified here): compose renders for base + arm64 and fails
+  fast on missing required vars (Compose v5.6.0 `config`, no daemon);
+  production bundle contains zero `localhost:8080` references; 50/50 native
+  smoke checks on H2; graceful SIGTERM shutdown observed.
+- Runtime container/Oracle/nginx/Jenkins execution is unverified in this
+  environment (no Docker daemon, no browser) — tracked in `agent.md` §6g.

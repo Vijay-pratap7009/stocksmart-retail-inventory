@@ -1,0 +1,21 @@
+# =============================================================================
+# StockSmart — ARM64/aarch64 override (Day 7)
+# Oracle Database XE 21c has no arm64 image; Oracle Database Free 23c does.
+# This override swaps the database image and moves the PDB from XEPDB1 (XE)
+# to FREEPDB1 (Free). Same app user, same named volume, same port.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d --build
+#
+# Note: an existing `oracle-data` volume created by XE 21c is NOT reusable with
+# Oracle Free 23c. Use a separate volume or start from a fresh database when
+# switching between the two images.
+# =============================================================================
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "FREEPDB1"]
+  backend:
+    environment:
+      DB_SERVICE: FREEPDB1

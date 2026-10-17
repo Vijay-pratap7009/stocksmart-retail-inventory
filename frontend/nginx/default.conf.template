@@ -1,0 +1,36 @@
+# Rendered by the nginx image's envsubst at container start.
+# BACKEND_URL must be host:port — default `backend:8080` (compose network).
+server {
+    listen       80;
+    server_name  _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # API reverse proxy: keeps browser requests same-origin, so no CORS and no
+    # internal backend address ever reaches the browser bundle.
+    # `^~` guarantees no regex location below can intercept an /api path.
+    location ^~ /api/ {
+        proxy_pass http://${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    60s;
+    }
+
+    # Hashed build assets are safe to cache hard.
+    location ~* \.(?:js|css|ico|svg|png|jpg|jpeg|gif|woff2?)$ {
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA fallback: deep links and refreshes resolve to the Angular shell.
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri $uri/ /index.html;
+    }
+}

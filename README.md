@@ -1,12 +1,14 @@
 # StockSmart — Retail Inventory Optimization & Supply Chain Management
 
-Day 5 adds **barcode operations, RFID tag mapping + reader simulation, and an
-inventory KPI dashboard** on top of Day 4 purchase/sales orders, Day 3
-inventory balances, Day 2 master data, and the Day 1 auth foundation.
+Day 7 completes **deployment**: Docker images for backend + frontend, a full
+compose stack (Angular/Nginx → Spring Boot → Oracle XE), externalized config,
+smoke tests, and an expanded Jenkins pipeline. See §15 for the verified status
+and the environment limits. Day 6 completed hardening; Days 1–5 built auth,
+master data, inventory, orders, barcode/RFID and the KPI dashboard.
 
-> Scope guard: Days 1–5 are complete. Day 6 = hardening, Day 7 = Docker/Jenkins.
-> There is no forecasting/ML; RFID is simulator-backed (no physical hardware is
-> integrated), and reads never change stock.
+> Scope guard: Days 1–7 are complete. There is no forecasting/ML; RFID is
+> simulator-backed (no physical hardware is integrated), and reads never change
+> stock.
 
 ---
 
@@ -24,10 +26,12 @@ inventory balances, Day 2 master data, and the Day 1 auth foundation.
 
 ## 2. Prerequisites
 
-- Java 17+, Maven 3.9+
-- Node.js 20+, npm 10+
-- Docker + Docker Compose (for Oracle XE), **or** use the H2 `local` profile
+- Java 17+, Maven 3.9+ (native backend)
+- Node.js 20+, npm 10+ (native frontend)
+- Docker Engine 24+ with Compose v2 (`docker compose`) for the containerized
+  stack — or use the H2 `local` profile with no Docker at all
 - Ports free: `8080` (API), `4200` (Angular), `1521` (Oracle)
+- Oracle XE container is amd64-only; ARM64 hosts use the override in §15.2
 
 ## 3. Oracle setup
 
@@ -81,8 +85,12 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 ```bash
 cd frontend
 npm install
-npm start                 # ng serve → http://localhost:4200 (proxy.conf.json forwards /api)
+npm start                 # ng serve → http://localhost:4200
 ```
+
+Dev builds call the API directly at `http://localhost:8080` (CORS allows the dev
+origin). Production builds are same-origin (`/api/...`, see §15.1) — the origin
+switch is an Angular `fileReplacements` entry, not a code change.
 
 ## 7. Authentication test (curl)
 
@@ -106,9 +114,9 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 curl http://localhost:8080/api/v1/test/protected                                     # → 401 (no token)
 ```
 
-Automated matrix: `cd backend && mvn test` (`SecurityVerificationTest`: 6 tests —
+Automated matrix: `cd backend && mvn test` (`SecurityVerificationTest`: 7 tests —
 health, login 200/401, protected 200/401, expired JWT 401, invalid JWT 401,
-admin/management RBAC 403/200, BCrypt storage).
+admin/management RBAC, BCrypt storage, JWT tamper checks).
 
 ## 8. API documentation
 
@@ -116,11 +124,15 @@ Swagger UI (`/swagger-ui.html`) documents health, login, and the three test
 endpoints with a **Bearer/JWT** security scheme — paste the login JWT via
 “Authorize” to call protected endpoints.
 
-## 9. CI readiness
+## 9. CI/CD
 
-A minimal `Jenkinsfile` (backend `mvn test` + frontend `ng build`) and
-`.dockerignore` files are present so CI/containerization can be introduced
-later without redesign. Docker is not required to run Days 1–5.
+The root `Jenkinsfile` is the pipeline: backend `mvn -B -ntp clean verify`
+(67 tests, H2), frontend `npm ci` + production build (+ `ng test` only when
+Chrome exists on the agent, otherwise an explicit skip), Docker image builds,
+compose-config validation, and an opt-in local deploy + smoke test. Details,
+prerequisites and the exact verified/unverified status: §15.7–§15.8.
+`.dockerignore` files keep build contexts small. Docker is not required to run
+or test Days 1–6 locally.
 
 ## 10. Day 2 — Master Data Management
 
@@ -374,15 +386,183 @@ the boundary, the Angular `/dashboard` card just hides itself on a 403.
 
 ### 13.4 Tests
 
-`cd backend && mvn test` — now 61 tests: Day 1 (6) + Day 2 (8) + Day 3 (12) +
+`cd backend && mvn test` — as of Day 5: 61 tests: Day 1 (6) + Day 2 (8) + Day 3 (12) +
 Day 4 (8) + `BarcodeRfidIntegrationTest` (15: barcode/SKU lookups + stock
 unchanged proof, duplicate/invalid barcode 409/400, tag lifecycle + duplicate
 EPC, simulated/external reads, unknown/inactive statuses, event-reference
 dedup, RFID RBAC) + `DashboardIntegrationTest` (12: exact KPI values, low-stock
 boundaries, warehouse filter/paging, cost-basis rounding, empty dataset,
-pending counts, no-double-count, recent movements, auth matrix).
+pending counts, no-double-count, recent movements, auth matrix). Day 6 expands
+the suite to 67 — see §14.
 
-## 14. Scope checklist
+## 14. Day 6 — Hardening & release verification
+
+### 14.1 Defects found and fixed
+
+| Finding | Fix |
+|---|---|
+| Duplicate line ids in one goods receipt / fulfillment passed the per-line remaining-quantity check and could over-receive / over-fulfill | `PurchaseOrderService.receive` / `SalesOrderService.fulfill` reject duplicate line ids up front (400), before any stock or quantity write |
+| `DELETE` on suppliers / warehouses / products could orphan purchase / sales order lines or stock history | Delete guards now return 409 with a clear message when POs, SOs, order lines, or stock movements reference the record (deactivate instead) |
+| Client input mistakes rendered 500: wrong path-variable / query types, unknown URLs, wrong method, wrong media type | `GlobalExceptionHandler` maps them to 400 / 404 / 405 / 415 JSON responses |
+| Angular: a 401 (expired / revoked token) left screens stuck on error banners | `authInterceptor` session-expiry policy — clear session + redirect to `/login` on any non-login 401 |
+| Signing with the public dev JWT default was silent | `JwtService` logs a startup warning when `JWT_SECRET` is the documented dev fallback |
+| N+1 lazy loads on order / receipt / fulfillment item collections | `@BatchSize(50)` on order aggregate entities |
+
+### 14.2 Verification evidence (executed 2026-10-17)
+
+- `cd backend && mvn test` → **67/67 pass** (H2 test profile):
+  `SecurityVerificationTest` (7 — includes new signature / claim-tampering 401
+  tests) + `MasterDataIntegrationTest` (8) + `InventoryIntegrationTest` (12) +
+  `OrderIntegrationTest` (8) + `BarcodeRfidIntegrationTest` (15) +
+  `DashboardIntegrationTest` (12) + `HardeningIntegrationTest` (5 — duplicate
+  receipt line, duplicate fulfillment line, client-error 400/404/405/415 matrix,
+  delete guards, CORS allow-list).
+- `cd frontend && npm run build` → production build succeeds (~470 kB initial).
+- Angular unit tests: **not executed** — Karma needs a browser; none is
+  available in this environment (pre-existing project limitation).
+- **Oracle runtime: not verified here** — no Docker / Oracle in this
+  environment. Automated tests run on the H2 test profile; Oracle remains the
+  primary config / driver / dialect (schema is JPA-managed).
+
+### 14.3 Known limitations
+
+- JWT is stateless: deactivating / deleting a user does not revoke an
+  already-issued token before expiry (24h default). Acceptable for this phase;
+  revocation would need a deny-list or a shorter TTL.
+- The dev fallback `JWT_SECRET` and default DB password in `application.yml`
+  are overridable dev-only defaults. Real deployments must override both (the
+  app warns when the default JWT secret is in use).
+- RFID is simulator-only; no physical hardware integration.
+
+## 15. Day 7 — Deployment & CI/CD
+
+### 15.1 Architecture
+
+```text
+Browser ──► frontend container (nginx :80 → host :4200)
+                │  serves the Angular production bundle
+                │  /api/*  reverse-proxied to BACKEND_URL (default backend:8080)
+                ▼
+            backend container (Spring Boot :8080 → host :8080)
+                │  JPA / HikariCP
+                ▼
+            oracle container (gvenzl/oracle-xe:21 → host :1521)
+                └ named volume `oracle-data` (persistent)
+```
+
+- The production bundle calls the API **same-origin** (`/api/...`):
+  `environment.prod.ts` has `apiUrl: ''` and nginx proxies to the backend —
+  no CORS, no internal hostname in the browser bundle, portable behind any
+  host/domain. The dev/prod switch is an Angular `fileReplacements` entry.
+- Oracle is the system of record; H2 (`local` profile / tests) is a fallback.
+
+### 15.2 Prerequisites & platform notes
+
+- Docker Engine 24+ / Docker Desktop with **Compose v2** (`docker compose`).
+  No Docker? Use the native H2 path (§5) — nothing else changes.
+- Oracle XE 21c is **amd64-only**. On Apple Silicon / ARM64 hosts:
+  `docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d --build`
+  (Oracle Database Free 23c, PDB `FREEPDB1`). The two images are **not**
+  volume-compatible — use a fresh volume or an external Oracle when switching.
+- First start pulls ~2 GB and initializes the DB (several minutes); give the
+  Docker VM ≥ 4 GB RAM. Ports: `4200`, `8080`, `1521`.
+
+### 15.3 Quick start
+
+```bash
+cp .env.example .env               # set DB_PASSWORD + JWT_SECRET (both required:)
+docker compose up -d --build       # oracle → healthy → backend → frontend
+docker compose ps                  # wait until services report healthy
+```
+
+- App: http://localhost:4200 · API: http://localhost:8080 ·
+  Swagger: http://localhost:8080/swagger-ui.html
+- First login: `admin / Admin@123` (seed users; set `APP_SEED_ENABLED=false`
+  and change the password for anything non-demo — §14)
+- Logs: `docker compose logs -f backend` (also `oracle`, `frontend`)
+- Stop: `docker compose stop` · Remove containers, keep data: `docker compose down`
+- **Reset DB (destructive):** `docker compose down -v` deletes `oracle-data`
+
+Startup ordering is health-based, never a fixed sleep: the backend waits for the
+Oracle PDB to be OPEN READ WRITE (`healthcheck.sh`), the frontend waits for
+`/api/v1/health`. Compose fails fast with actionable errors when required
+variables are missing (there are no weak defaults in the compose file).
+
+### 15.4 Persistence — fresh setup vs existing data
+
+- **Fresh setup:** first `up` initializes the DB in the `oracle-data` volume;
+  Hibernate (`ddl-auto: update`) creates/updates the schema on backend start.
+- **Existing database:** keep the volume (never `down -v`) or point
+  `DB_HOST/DB_PORT/DB_SERVICE/DB_USERNAME/DB_PASSWORD` at an external Oracle —
+  `ddl-auto: update` is additive, it does not drop data.
+
+### 15.5 Configuration
+
+Required: `DB_PASSWORD`, `JWT_SECRET` (`openssl rand -base64 48`).
+Optional: `DB_USERNAME` (stocksmart), `DB_SERVICE` (XEPDB1), `DB_PORT` (1521),
+`FRONTEND_PORT` (4200), `IMAGE_TAG` (dev), `BACKEND_URL` (backend:8080),
+`APP_SEED_ENABLED`/`APP_SEED_PASSWORD`, `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`.
+`.env` is git-ignored; `.env.example` contains placeholders only. Full table §4.
+
+### 15.6 Smoke tests
+
+```bash
+scripts/smoke-test.sh http://localhost:4200   # containerized stack (via nginx)
+scripts/smoke-test.sh http://localhost:8080   # native backend (H2 or Oracle)
+```
+
+Covers: health, login/JWT, RBAC (401/403), master data, receipt/transfer/
+adjustment with ledger assertions, barcode lookup, RFID resolve + duplicate
+rejection + **no stock change**, PO receipt, SO fulfillment + insufficient-stock
+rejection, dashboard-vs-ledger agreement, and SPA deep-link fallback when the
+target serves HTML. Prints `N passed, M failed`; exits non-zero on any failure.
+
+### 15.7 Jenkins CI/CD
+
+Pipeline lives in the root `Jenkinsfile`. Agent prerequisites: tools named
+`jdk-17` and `node-20` (matching the `tools` block), Maven, Docker Engine +
+Compose v2 for the image stages, and the repo checkout. No registry credentials
+are needed — images are built locally; publishing/deploy targets are
+intentionally not configured.
+
+Stages: Checkout → Backend `mvn -B -ntp clean verify` (H2; JUnit published) →
+Frontend `npm ci` + production build (`ng test` only when Chrome exists on the
+agent, otherwise an explicit skip is logged) → Build Docker images
+(`:${BUILD_NUMBER}`, `:latest`) → Validate Compose config (placeholder env, no
+secrets) → opt-in `DEPLOY_LOCAL` stage (`docker compose up -d --build` + smoke
+test through :4200). The build fails on any failed stage.
+
+### 15.8 Verified Day 7 results and environment limits
+
+- `mvn -B -ntp clean package` → **67/67 tests**, jar built ✅
+- `npm ci && ng build` → ✅; production bundle contains **zero** references to
+  `localhost:8080` (relative `/api` + nginx proxy) ✅
+- `docker compose config`: base file, ARM64 override, and fail-fast on missing
+  required variables all validated with the standalone Compose v5.6.0 binary ✅
+  (no daemon needed for config validation)
+- Native runtime smoke: **50/50 passed** against the packaged jar on the H2
+  `local` profile; `SIGTERM` triggered Spring **graceful shutdown** ✅
+- **Not executable in this environment (no Docker daemon, no browser):**
+  `docker build`, `docker compose up`, container startup, Oracle connectivity,
+  nginx SPA routing, and Jenkins pipeline execution. Unverified here by
+  design — tracked in `agent.md` §6g rather than claimed.
+
+### 15.9 Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `required variable DB_PASSWORD is missing` | `.env` missing/incomplete — `cp .env.example .env`, set `DB_PASSWORD`+`JWT_SECRET` |
+| Backend up but DB errors | Oracle still initializing: `docker compose ps`, `logs oracle`. Compose already waits for `healthcheck.sh`; on slow machines raise the Oracle `healthcheck.retries` |
+| `ORA-12514` / `ORA-01017` from backend | Wrong `DB_SERVICE` (arm64 override → `FREEPDB1`), credentials, or uninitialized volume — `docker compose logs oracle` |
+| Port 4200/8080/1521 in use | Change `FRONTEND_PORT` / free the port; the backend listens on 8080 inside the network and on the host |
+| Angular loads, API calls fail | You served `dist/` without the nginx proxy, or `BACKEND_URL` is unreachable. In compose it must be container-to-container (`backend:8080`) |
+| Browser still calls `localhost:8080` | Stale bundle — rebuild (`ng build` now applies `environment.prod.ts`); hard-refresh |
+| `exec format error` on Apple Silicon | Oracle XE is amd64-only → add the ARM64 override file (§15.2) |
+| Jenkins: `docker: command not found` / permission denied | Install Docker on the agent and add its user to the `docker` group; do not mount the socket without a documented reason |
+| Tests pass locally, fail in CI | Verify the `jdk-17`/`node-20` tool names and that `npm ci` uses the committed lockfile |
+| Data "disappeared" after a restart | You ran `docker compose down -v` — that deletes the `oracle-data` volume |
+
+## 16. Scope checklist
 
 ### Day 1 (done)
 
@@ -435,4 +615,23 @@ pending counts, no-double-count, recent movements, auth matrix).
 - [x] Angular `/scan`, `/rfid`, `/dashboard` screens + product form fields + Home nav
 - [x] `BarcodeRfidIntegrationTest` (15) + `DashboardIntegrationTest` (12); Day 2–4 test set-ups made RFID-FK-safe
 - [x] `design.md` + README Day 5 docs
-- [ ] Day 6+ (hardening, Docker/Jenkins, forecasting) — **not started by design**
+
+### Day 6 (done — hardening & release verification, see §14)
+
+- [x] Duplicate receipt/fulfillment line ids rejected before any stock write
+- [x] Supplier/warehouse/product delete guards extended to order lines and stock history
+- [x] Client-error status codes (400/404/405/415) instead of 500
+- [x] Auth interceptor session-expiry handling (401 → login)
+- [x] JWT dev-secret warning; JWT signature/claim-tampering regression tests
+- [x] `HardeningIntegrationTest` (5) + full suite 67/67 on H2; `ng build` clean
+
+### Day 7 (done — deployment & CI/CD, see §15)
+
+- [x] Backend + frontend Dockerfiles (multi-stage, non-root, healthchecks, graceful shutdown)
+- [x] Nginx-served Angular production bundle with same-origin `/api` proxy (`environment.prod.ts` + `fileReplacements`)
+- [x] `docker-compose.yml` (oracle → backend → frontend, health-based ordering, named volume, fail-fast secrets) + ARM64 override
+- [x] Externalized configuration (`.env.example`; required `DB_PASSWORD`/`JWT_SECRET`)
+- [x] `scripts/smoke-test.sh` — 50 checks incl. ledger and RFID no-stock-change
+- [x] Expanded `Jenkinsfile` (verify, build, compose config, opt-in deploy + smoke, JUnit)
+- [x] Verified: 67/67 tests, clean `ng build` with relative API URL, compose config valid, 50/50 native smoke, graceful SIGTERM shutdown
+- [ ] Container/Oracle/Jenkins execution — blocked in this environment (no Docker/browser); documented as unverified

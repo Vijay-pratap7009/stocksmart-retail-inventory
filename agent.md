@@ -13,6 +13,7 @@ Day 3 = inventory balances + movement history (DONE — see §3c, §6c).
 Day 4 = purchase/sales orders with inventory integration (DONE — see §3d, §6d).
 Day 5 = barcode operations, RFID tag mapping + reader simulator, KPI dashboard
 (DONE — see §3e, §6e). RFID is **simulator-only** — no physical hardware.
+Day 6 = hardening & release verification (DONE — see §3f, §6f).
 
 ## 2. Stack (locked)
 
@@ -146,14 +147,78 @@ Day 5 = barcode operations, RFID tag mapping + reader simulator, KPI dashboard
   (RFID FKs → products/users). Docs: `design.md` §2.9–2.10 + Day 5 API/RBAC/KPI,
   README §13–14.
 
+## 3f. What Day 6 built (all verified — see §6f)
+
+- **Integrity guards:** `PurchaseOrderService.receive` / `SalesOrderService.fulfill`
+  reject duplicate line ids in one payload up front (400) — previously repeated
+  entries each passed the remaining-quantity check and could over-receive /
+  over-fulfill. `SupplierService` / `WarehouseService` deletes now 409 while POs
+  reference them; `WarehouseService` also guards sales orders; `ProductService`
+  guards purchase-order lines, sales-order lines and stock movements
+  (new `PurchaseOrderItemRepository.existsByProductId`; `existsBy*` added to
+  `PurchaseOrderRepository`, `SalesOrderRepository`, `SalesOrderItemRepository`,
+  `StockTransactionRepository`).
+- **Error handling:** `GlobalExceptionHandler` maps
+  `MethodArgumentTypeMismatch` / `MissingServletRequestParameter` → 400,
+  `HttpRequestMethodNotSupported` → 405, `HttpMediaTypeNotSupported` → 415,
+  `NoResourceFound` → 404 (previously 500s).
+- **JWT/secrets:** `JwtService` logs a startup warning when `JWT_SECRET` is the
+  documented dev default (public in repo).
+- **N+1:** `@BatchSize(50)` on order/receipt/fulfillment aggregate entities.
+- **Frontend:** `auth.interceptor.ts` attaches the bearer to `http*` and `/api*`
+  URLs and, on any non-login 401, clears the session and redirects to `/login`
+  (previously screens were stuck on error banners).
+- **Tests:** `HardeningIntegrationTest` (5: duplicate receipt line, duplicate
+  fulfillment line, client-error 400/404/405/415 matrix, delete guards, CORS
+  allow-list) + new JWT signature/claim-tampering test in
+  `SecurityVerificationTest` (now 7). Full suite: 67/67 ✅. `ng build` ✅.
+
+## 3g. What Day 7 built (config-verified; runtime containers NOT executed — see §6g)
+
+- **Backend image** (`backend/Dockerfile`): multi-stage `maven:3.9-eclipse-temurin-17`
+  build → `eclipse-temurin:17-jre`, non-root user `stocksmart` (uid 1001), `curl` for
+  the healthcheck, `JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"`,
+  `HEALTHCHECK` on `/api/v1/health`, exec-form entrypoint (SIGTERM reaches the JVM).
+  `server.shutdown: graceful` + 30 s lifecycle timeout added to `application.yml`.
+- **Frontend image** (`frontend/Dockerfile`): `node:20-alpine` build → `nginx:1.27-alpine`;
+  `frontend/nginx/default.conf.template` proxies `/api/` to `${BACKEND_URL}`
+  (default `backend:8080`) via the image's envsubst entrypoint, SPA
+  `try_files ... /index.html` fallback, static-asset cache headers.
+- **Prod origin switch (was dead code before):** `environment.prod.ts` now
+  `apiUrl: ''` and `angular.json` has the production `fileReplacements` entry —
+  `ng build` emits a same-origin bundle (verified: zero `localhost:8080` refs).
+- **Compose** (`docker-compose.yml`): oracle (`gvenzl/oracle-xe:21-slim-faststart`,
+  `healthcheck.sh XEPDB1`) → backend (`depends_on: service_healthy`, required
+  `DB_PASSWORD`/`JWT_SECRET` via `:?`) → frontend (`4200:80`, `BACKEND_URL`);
+  bridge network `stocksmart-net`, named volume `oracle-data`.
+  `docker-compose.arm64.yml` override: `gvenzl/oracle-free:23-slim-faststart`
+  with `FREEPDB1` (XE 21c is amd64-only; volumes are NOT cross-image compatible).
+- **Config:** `.env.example` documents required vs optional vars; `.env` git-ignored.
+- **`Jenkinsfile`:** checkout → backend `mvn -B -ntp clean verify` (H2, JUnit
+  published) → frontend `npm ci` + build (`ng test` only when Chrome exists,
+  explicit skip otherwise) → docker images `:${BUILD_NUMBER}`/`:latest` →
+  `docker compose config` validation (placeholder env) → opt-in `DEPLOY_LOCAL`
+  stage (`up -d --build` + `scripts/smoke-test.sh http://localhost:4200`).
+- **`scripts/smoke-test.sh`:** 50 checks — health, auth/JWT, RBAC 401/403, master
+  data, receipt→transfer→adjustment ledger math, barcode lookup, RFID register/
+  resolve/duplicate-409/no-stock-change, PO receive, SO fulfill + insufficient-409,
+  dashboard-vs-ledger, optional SPA deep-link when the target serves HTML.
+- **Docs:** README §15 (deployment, persistence, troubleshooting), design.md §7
+  (deployment architecture), this file.
+
 ## 4. Run commands
 
 ```bash
 # Backend (Oracle):  cd backend && mvn spring-boot:run
 # Backend (no Oracle): cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=local
-# Tests:  cd backend && mvn test   # 61 tests: SecurityVerification + MasterData + Inventory + Order + BarcodeRfid + Dashboard
+# Tests:  cd backend && mvn test   # 67 tests: Security + MasterData + Inventory + Order + BarcodeRfid + Dashboard + Hardening
 # Frontend: cd frontend && npm install && npm start   # :4200, demo admin/Admin@123
 # Swagger: http://localhost:8080/swagger-ui.html
+# Container stack (needs Docker + .env with DB_PASSWORD/JWT_SECRET):
+#   cp .env.example .env && docker compose up -d --build
+#   scripts/smoke-test.sh http://localhost:4200        # through nginx
+#   scripts/smoke-test.sh http://localhost:8080        # native backend instead
+# ARM64 host: add -f docker-compose.arm64.yml (Oracle Free 23c, FREEPDB1)
 ```
 
 ## 5. Gotchas learned in this environment
@@ -254,6 +319,44 @@ Found + fixed during Day 5: Jackson tree parsing normalizes BigDecimal scale
 setUps needed RFID-first deletes (FK-safe ordering). No Docker, no browser
 (no Karma), no `gh`. Live Oracle still untested here (H2 `local` only).
 
+## 6f. Day 6 verified results (executed, not claimed)
+
+`mvn test` 67/67 ✅ (Day 1 7/7 incl. the new wrong-key-signature + tampered-claim
+401 test + Day 2 8/8 + Day 3 12/12 + Day 4 8/8 + Day 5 15/15 + 12/12 +
+`HardeningIntegrationTest` 5/5). `ng build` ✅ (~470 kB initial). Re-verified
+2026-10-17 with the working tree intact. **Not verified:** Oracle runtime (no
+Docker/Oracle here — H2 test profile only), Angular Karma tests (no browser).
+Context for this run: fresh toolchain had to be re-downloaded to
+`/tmp/opencode/tools/` (JDK 17 + Maven 3.9.6; agent.md said 3.9.16 — either
+works). No Docker, no browser, no `gh`.
+
+## 6g. Day 7 verified results (executed) + explicitly UNVERIFIED
+
+Executed here (2026-10-17):
+- `mvn -B -ntp clean package` (after the Day 7 config edits) → 67/67 tests ✅,
+  jar `backend/target/stocksmart-backend-0.1.0.jar`.
+- `npm ci` (890 pkgs) + `npm run build` ✅. **Production bundle grep: 0 occurrences
+  of `localhost:8080`** — the env switch really took effect (`apiUrl:""` in bundle).
+- `docker compose config` with the standalone Compose **v5.6.0** binary (no daemon
+  needed) downloaded to `/tmp/opencode/tools/docker-compose`, checksum-verified:
+  base file VALID ✅, `-f docker-compose.yml -f docker-compose.arm64.yml` VALID ✅
+  (renders `DB_SERVICE: FREEPDB1`, `gvenzl/oracle-free:23-slim-faststart`), and with
+  `DB_PASSWORD`/`JWT_SECRET` unset it exits 1 with clear `.env` guidance ✅.
+- Native runtime smoke: `java -jar ... --spring.profiles.active=local` (H2),
+  then `scripts/smoke-test.sh http://localhost:8080` → **50 passed, 0 failed** ✅
+  (auth/RBAC, master data, receipt 10 → transfer 3 → adjust 2 → WH1=7/WH2=5,
+  barcode, RFID resolve + dup-409 with **no stock movement**, PO +5 → WH1=12,
+  SO −4 → WH1=8, oversized SO → 409 unchanged, dashboard WH1 = 8 units).
+- Graceful shutdown: `kill -TERM` → Spring "Commencing graceful shutdown …
+  complete", process exits cleanly ✅ (container stop behavior).
+- Startup log confirms the Day 6 JWT dev-secret warning fires ✅.
+
+**Unverified (blocked in this environment — do not claim otherwise):**
+`docker build` (no daemon), container startup, Oracle XE connectivity/PDB,
+nginx SPA fallback (`try_files`), the ARM64 Oracle Free path, and any Jenkins
+stage execution (no Jenkins here). The smoke SPA section auto-skips when the
+target serves the API directly (it did, on :8080).
+
 ## 7. Deferred (DO NOT implement until its phase)
 
 Day 2: DONE (product/category/warehouse/supplier + design.md).
@@ -263,7 +366,9 @@ Day 4: DONE (purchase/sales orders, atomic receipts/fulfillments via Day 3
 hooks, idempotency references, no cross sales↔purchase access).
 Day 5: DONE (barcode lookups, RFID tag registry + simulator, KPI dashboard;
 RFID = SIMULATOR only — no physical hardware; reads never change stock).
-Day 6: hardening. Day 7: Docker deploy + Jenkins runs. Future: forecasting/ML.
+Day 6: DONE (hardening — see §3f/§6f; working tree, not yet committed).
+Day 7: DONE here (Docker/compose/Jenkins/smoke + docs — see §3g/§6g; runtime
+containers unverified, no Docker). Future: forecasting/ML.
 
 ## 8. Git state
 
@@ -273,3 +378,18 @@ Local `main`: Day 1 commits + `f7f4b62 docs: agent handoff` + `d9054da feat: Day
 (= Day 3 only) was pushed for PR. Remote `origin` set, `main` tracks `origin/main`.
 Pushing from here needs a PAT (`repo` scope); never reuse revoked/shared tokens —
 ask the user for a fresh one each time.
+
+Day 6 state (as of 2026-10-17): local `main` = `168d2ab` (Day 5), diverged from
+`origin/main` (5 ahead / 4 behind). Day 6 lives in the **uncommitted working
+tree**: 21 modified files + 2 untracked files (`HardeningIntegrationTest.java`,
+`PurchaseOrderItemRepository.java`) + the doc updates from this session. Nothing
+was committed, pushed, stashed, reset, or cleaned during Day 6.
+
+Day 7 state (same day): still `main` = `168d2ab`, still diverged 5/4. Day 7 is
+also **uncommitted**, merged into the same working tree: ~40 changed paths total
+(Days 1–7), including new `frontend/Dockerfile`,
+`frontend/nginx/default.conf.template`, `docker-compose.arm64.yml`,
+`scripts/smoke-test.sh`, and rewritten `backend/Dockerfile`, `docker-compose.yml`,
+`Jenkinsfile`, `angular.json`, `environment.prod.ts`, `application.yml`,
+`.env.example`, README/design/agent docs. No commit, push, stash, reset, or
+clean was performed. The user has not asked for commits.
